@@ -463,3 +463,12 @@ button.list-row:hover { background: var(--hover); }
 /* red light: keeps the eyes used to the dark */
 .night-red::after { content: ''; position: absolute; inset: 0; background: #ff2a1a; mix-blend-mode: multiply; pointer-events: none; z-index: 40; }
 .night-red.sky-point::after { position: fixed; }
+.sky-search.compact { width: auto; flex: 1; max-width: 220px; }
+.sky-guide { position: absolute; left: 50%; top: calc(60px + env(safe-area-inset-top)); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 24px);
+  padding: 8px 8px 8px 12px; border-radius: 12px; background: rgba(14, 20, 42, .88); border: 1px solid rgba(255, 209, 102, .5); color: #ffe7b0; font-size: 13.5px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.sky-guide.found { border-color: rgba(134, 239, 172, .6); color: #bbf7d0; }
+.sky-btn.icon.sm { width: 28px; height: 28px; }
+.sky-sheet .btn.on { background: rgba(255, 209, 102, .2); border-color: rgba(255, 209, 102, .5); }
+.sky-sheet .btn.primary { background: #4b59c6; border-color: transparent; }
+.lineup-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.lineup-list .btn { flex-direction: column; align-items: flex-start; height: auto; padding: 6px 10px; gap: 0; }

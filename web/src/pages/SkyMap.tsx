@@ -10,8 +10,8 @@ import { type BodyKey, BODIES, NAMES, altAz, at, dirShort, direction } from '../
 import { fmtAt, fmtDate, fmtDayAt } from '../lib/format'
 import { Pointer, askSensors, openCamera, sensorsAvailable } from '../lib/orientation'
 import { placeQuery, usePlace } from '../lib/place'
-import { type Catalog, type Layers, type Painted, directionOf, draw, frameOf, hitTest, loadCatalog, starLabel } from '../lib/sky'
-import type { ObjectDetail, Settings, SkyObject } from '../lib/types'
+import { type Catalog, type Guide, type Layers, type Painted, directionOf, draw, frameOf, hitTest, loadCatalog, starLabel } from '../lib/sky'
+import type { ObjectDetail, Settings, SkyObject, Tonight } from '../lib/types'
 import { Icon } from '../components/icons'
 import { PlacePicker } from '../components/PlacePicker'
 import { useCrumb } from '../components/Layout'
@@ -59,6 +59,12 @@ export default function SkyMap() {
   const [selected, setSelected] = useState<string>('')
   const [selName, setSelName] = useState('')
   const [aim, setAim] = useState<{ alt: number; az: number; name: string; key: string } | null>(null)
+  const [path, setPath] = useState('')
+  const [guideKey, setGuideKey] = useState('')
+  const [guideName, setGuideName] = useState('')
+  const [guide, setGuide] = useState<Guide | null>(null)
+  const [lineUp, setLineUp] = useState(false)
+  const [tour, setTour] = useState<{ steps: TourStep[]; i: number } | null>(null)
   const painted = useRef<Painted | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -76,8 +82,9 @@ export default function SkyMap() {
   const camFov = settings?.camera_fov ?? 64
 
   const obs = useMemo(() => (place ? { lat: place.lat, lon: place.lon } : null), [place])
-  const stateRef = useRef({ t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov })
-  stateRef.current = { t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov }
+  const tz = place?.timezone
+  const stateRef = useRef({ t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov, path, guideKey, tz })
+  stateRef.current = { t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov, path, guideKey, tz }
 
   const paint = useCallback(() => {
     raf.current = 0
@@ -106,8 +113,13 @@ export default function SkyMap() {
     const p = draw(ctx, w, h, cat, {
       t: st.t, obs: st.obs, ...fr, fov: camera ? st.camFov : view.current.fov, proj: camera ? 'gnomonic' : 'stereo', fovLong: camera,
       camera, layers: st.layers, magLimit: st.magLimit, selected: st.selected || undefined,
+      path: st.path || undefined, guide: st.mode === 'point' && st.guideKey ? st.guideKey : undefined, hourLabel: tt => fmtAt(tt, st.tz),
     })
     painted.current = p
+    if (st.mode === 'point') {
+      const g = p.guide || null
+      setGuide(prev => (!g && !prev) || (g && prev && prev.key === g.key && prev.onScreen === g.onScreen && prev.turn === g.turn) ? prev : g)
+    }
     if (st.mode === 'point') {
       const [alt, az] = altAz(fr.f)
       const hit = hitTest({ ...p, hits: p.hits }, w / 2, h / 2, null)
@@ -120,7 +132,7 @@ export default function SkyMap() {
   }, [cat])
 
   const schedule = useCallback(() => { if (!raf.current) raf.current = requestAnimationFrame(paint) }, [paint])
-  useEffect(() => { schedule() }, [schedule, t, obs, layers, mode, camOn, selected, cat, settings?.mag_limit, camFov])
+  useEffect(() => { schedule() }, [schedule, t, obs, layers, mode, camOn, selected, cat, settings?.mag_limit, camFov, path, guideKey])
 
   // canvas size
   useEffect(() => {
@@ -249,7 +261,20 @@ export default function SkyMap() {
   }, [schedule])
 
   // ---- pointing the phone ----
+  // keep the screen on while pointing at the sky
+  const wake = useRef<{ release: () => Promise<void> } | null>(null)
+  const wakeOn = () => {
+    const nav = navigator as Navigator & { wakeLock?: { request: (t: 'screen') => Promise<{ release: () => Promise<void> }> } }
+    nav.wakeLock?.request('screen').then(l => { wake.current = l }).catch(() => {})
+  }
+  useEffect(() => {
+    const h = () => { if (document.visibilityState === 'visible' && pointer.current) wakeOn() }
+    document.addEventListener('visibilitychange', h)
+    return () => document.removeEventListener('visibilitychange', h)
+  }, [])
   const stopPointing = useCallback(() => {
+    wake.current?.release().catch(() => {}); wake.current = null
+    if (pointer.current) sessionStorage.setItem('psky-offset', String(pointer.current.offset))
     pointer.current?.stop(); pointer.current = null; frame.current = null
     stream.current?.getTracks().forEach(tr => tr.stop()); stream.current = null
     setCamOn(false); setMode('map'); setNoSensor(false)
@@ -274,12 +299,31 @@ export default function SkyMap() {
     if (!ok) { toast('Motion and orientation are not allowed for this site.', 'err'); return }
     setSelected('')
     const p = new Pointer(fr => { frame.current = fr; setNorthFound(p.northFound); schedule() })
+    p.offset = Number(sessionStorage.getItem('psky-offset') || 0) || 0
     pointer.current = p
     p.start()
+    wakeOn()
     setMode('point')
     setNoSensor(false)
     window.setTimeout(() => { if (pointer.current === p && !p.heard) setNoSensor(true) }, 2500)
     if (withCamera) await startCamera()
+  }
+
+  // ---- tonight's tour ----
+  const showStep = (steps: TourStep[], i: number) => {
+    const st = steps[i]
+    setTour({ steps, i })
+    setSelected(st.key); setSelName(st.name)
+    if (stateRef.current.mode === 'point') { setGuideKey(st.key); setGuideName(st.name) } else goTo(st.key)
+  }
+  const startTour = async () => {
+    if (!place || !obs) return
+    try {
+      const v = await api.get<Tonight>(`${V1}/tonight?${placeQuery(place)}`)
+      const steps = buildTour(v, cat, obs, Date.now())
+      if (steps.length === 0) { toast('Nothing good is up right now; try after dark.'); return }
+      showStep(steps, 0)
+    } catch (e) { toast((e as Error).message, 'err') }
   }
 
   // ---- settings from the map ----
@@ -313,7 +357,11 @@ export default function SkyMap() {
     api.get<SkyObject[]>(`${V1}/objects/search?q=${encodeURIComponent(dq)}&limit=12`).then(r => { if (alive) setResults(r) }).catch(() => {})
     return () => { alive = false }
   }, [dq])
-  const pick = (o: SkyObject) => { setSearchOpen(false); setQ(''); setSelected(o.key); setSelName(o.name); goTo(o.key) }
+  const pick = (o: SkyObject) => {
+    setSearchOpen(false); setQ('')
+    if (stateRef.current.mode === 'point') { setGuideKey(o.key); setGuideName(o.name); setSelected(''); return }
+    setSelected(o.key); setSelName(o.name); goTo(o.key)
+  }
 
   const timeLabel = live ? `Now · ${fmtAt(t, place?.timezone)}` : `${fmtDayAt(t, place?.timezone)} ${fmtAt(t, place?.timezone)}`
   const setTime = (ms: number) => { setLive(false); setT(ms) }
@@ -344,12 +392,11 @@ export default function SkyMap() {
 
         {/* top bar */}
         <div className="sky-bar top">
-          {pointing ? (
-            <button type="button" className="sky-btn" onClick={stopPointing} aria-label="Back to the map"><Icon name="x" size={18} /><span className="hide-sm">Back to the map</span></button>
-          ) : (
-            <div className="sky-search">
+          {pointing && <button type="button" className="sky-btn icon" onClick={stopPointing} aria-label="Back to the map" title="Back to the map"><Icon name="x" size={18} /></button>}
+          {(
+            <div className={`sky-search ${pointing ? 'compact' : ''}`}>
               <Icon name="search" size={16} />
-              <input value={q} onChange={e => { setQ(e.target.value); setSearchOpen(true) }} onFocus={() => setSearchOpen(true)} placeholder="Find a star, planet, galaxy…" aria-label="Find in the sky" />
+              <input value={q} onChange={e => { setQ(e.target.value); setSearchOpen(true) }} onFocus={() => setSearchOpen(true)} placeholder={pointing ? 'Find…' : 'Find a star, planet, galaxy…'} aria-label="Find in the sky" />
               {searchOpen && results && (
                 <div className="sky-results">
                   {results.length === 0 && <div className="muted small" style={{ padding: 10 }}>Nothing called “{dq}”.</div>}
@@ -378,15 +425,34 @@ export default function SkyMap() {
             {!northFound && !noSensor && <div className="sky-hint">Finding north: hold the phone upright for a moment, camera towards the horizon.</div>}
             {camErr && northFound && !noSensor && <div className="sky-hint">{camErr}</div>}
             {noSensor && <div className="sky-hint">No compass readings yet. Move the phone in a figure of eight; if nothing happens, this device has no compass.</div>}
-            <div className="sky-hint soft">Off a little? Drag sideways to line the stars up.{camOn ? ' Pinch to match the camera.' : ''}</div>
+            {!guideKey && !tour && <div className="sky-hint soft">Off a little? Tap Line up, or drag sideways.{camOn ? ' Pinch to match the camera.' : ''}</div>}
           </div>
         )}
+        {pointing && guideKey && (
+          <div className={`sky-guide ${guide?.onScreen ? 'found' : ''}`}>
+            <Icon name={guide?.onScreen ? 'check-circle' : 'navigation'} size={16} />
+            <span className="grow"><b>{guideName}</b>{guide ? (guide.onScreen ? (guide.off < 4 ? ': in the crosshair' : ': in view, bring it to the centre') : `: ${guide.turn || 'nearly there'}`) : ''}</span>
+            <button type="button" className="sky-btn icon sm" onClick={() => { setGuideKey(''); setGuide(null) }} aria-label="Stop looking for it"><Icon name="x" size={14} /></button>
+          </div>
+        )}
+        {pointing && lineUp && obs && <LineUp obs={obs} t={t} cat={cat} onClose={() => setLineUp(false)} onPick={(name, az) => {
+          const f = frame.current
+          if (!f || !pointer.current) return
+          const [, aimAz] = altAz(f.f)
+          const d = ((az - aimAz + 540) % 360) - 180
+          pointer.current.offset += d
+          sessionStorage.setItem('psky-offset', String(pointer.current.offset))
+          setLineUp(false)
+          toast(`Lined up on ${name}${Math.abs(d) >= 1 ? ` (moved ${Math.abs(Math.round(d))}°)` : ''}`, 'ok')
+        }} />}
 
         {/* bottom bar */}
         <div className="sky-bar bottom">
           <button type="button" className={`sky-btn ${timeOpen ? 'on' : ''}`} onClick={() => { setBase(live ? Date.now() : t); setTimeOpen(o => !o) }} aria-expanded={timeOpen}><Icon name="clock" size={16} />{timeLabel}</button>
           {!live && <button type="button" className="sky-btn" onClick={() => { setLive(true); setT(Date.now()) }}>Now</button>}
           <span className="spacer" />
+          {pointing && <button type="button" className={`sky-btn ${lineUp ? 'on' : ''}`} onClick={() => setLineUp(o => !o)} title="Put the crosshair on the Moon or a bright star, then tap its name"><Icon name="crosshair" size={16} />Line up</button>}
+          <button type="button" className={`sky-btn ${tour ? 'on' : ''}`} onClick={() => (tour ? setTour(null) : startTour())} title="Tonight's best sights, one after the other"><Icon name="route" size={16} /><span className={pointing ? '' : 'hide-sm'}>Tour</span></button>
           {!pointing && <>
             <button type="button" className="sky-btn icon" onClick={() => { view.current.fov = Math.max(8, view.current.fov / 1.4); keepView(); schedule() }} aria-label="Zoom in"><Icon name="plus" size={18} /></button>
             <button type="button" className="sky-btn icon" onClick={() => { view.current.fov = Math.min(140, view.current.fov * 1.4); keepView(); schedule() }} aria-label="Zoom out"><Icon name="minus" size={18} /></button>
@@ -408,8 +474,11 @@ export default function SkyMap() {
             <div className="row muted small" style={{ justifyContent: 'space-between' }}><span>−12 h</span><span>{fmtDayAt(t, place?.timezone)} {fmtAt(t, place?.timezone)}</span><span>+12 h</span></div>
           </div>
         )}
-        {selected && obs && <InfoSheet k={selected} name={selName} t={t} placeQ={placeQuery(place)} cat={cat} obs={obs} tz={place?.timezone}
-          onClose={() => setSelected('')} onCenter={() => goTo(selected)} pointing={pointing} onLog={() => navigate(`/log?add=${encodeURIComponent(selected)}`)} />}
+        {selected && obs && !tour && <InfoSheet k={selected} name={selName} t={t} placeQ={placeQuery(place)} cat={cat} obs={obs} tz={place?.timezone}
+          onClose={() => setSelected('')} onCenter={() => goTo(selected)} pointing={pointing} onLog={() => navigate(`/log?add=${encodeURIComponent(selected)}`)}
+          path={path === selected} onPath={() => setPath(p => (p === selected ? '' : selected))}
+          onFind={() => { setGuideKey(selected); setGuideName(selName || selected); setSelected('') }} />}
+        {tour && <TourPanel tour={tour} onStep={i => showStep(tour.steps, i)} onEnd={() => { setTour(null); setGuideKey(''); setSelected('') }} />}
       </div>
     </div>
   )
@@ -417,9 +486,9 @@ export default function SkyMap() {
 
 // ---- what you tapped ----
 
-function InfoSheet({ k, name, t, placeQ, cat, obs, tz, onClose, onCenter, pointing, onLog }: {
+function InfoSheet({ k, name, t, placeQ, cat, obs, tz, onClose, onCenter, pointing, onLog, path, onPath, onFind }: {
   k: string; name: string; t: number; placeQ: string; cat: Catalog | null; obs: { lat: number; lon: number }; tz?: string
-  onClose: () => void; onCenter: () => void; pointing: boolean; onLog: () => void
+  onClose: () => void; onCenter: () => void; pointing: boolean; onLog: () => void; path: boolean; onPath: () => void; onFind: () => void
 }) {
   const { toast } = useToast()
   const [d, setD] = useState<ObjectDetail | null>(null)
@@ -488,9 +557,86 @@ function InfoSheet({ k, name, t, placeQ, cat, obs, tz, onClose, onCenter, pointi
       </>}
       <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
         {!pointing && <button type="button" className="btn sm" onClick={onCenter}><Icon name="crosshair" size={14} />Centre</button>}
+        {pointing && <button type="button" className="btn sm" onClick={onFind}><Icon name="navigation" size={14} />Find it</button>}
+        {k !== 'sun' && <button type="button" className={`btn sm ${path ? 'on' : ''}`} onClick={onPath} aria-pressed={path}><Icon name="route" size={14} />{path ? 'Hide its path' : 'Path tonight'}</button>}
         {d && <button type="button" className="btn sm" onClick={toggleTarget}><Icon name={d.target_id ? 'check' : 'target'} size={14} />{d.target_id ? 'On your list' : 'Want to see'}</button>}
         <button type="button" className="btn sm" onClick={onLog}><Icon name="journal" size={14} />Log it</button>
         <button type="button" className="btn sm" onClick={explain} disabled={ai.busy}>{ai.busy ? <Spinner /> : <Icon name="sparkles" size={14} />}Tell me more</button>
+      </div>
+    </div>
+  )
+}
+
+// ---- the tour ----
+
+interface TourStep { key: string; name: string; text: string; az: number }
+
+/** Tonight's best things that are up now, in a sweep round the sky from the north through the east. */
+function buildTour(v: Tonight, cat: Catalog | null, obs: { lat: number; lon: number }, t: number): TourStep[] {
+  const out: TourStep[] = []
+  const add = (key: string, name: string, text: string, minAlt: number) => {
+    const d = directionOf(cat, key, obs, t)
+    if (d && d.alt > minAlt && !out.some(s => s.key === key)) out.push({ key, name, text, az: d.az })
+  }
+  if (v.moon.phase > 0.03) add('moon', 'Moon', v.moon.words, 3)
+  for (const p of v.planets) if (p.visible) add(p.key, p.name, p.words, 5)
+  for (const x of v.sights.slice(0, 7)) add(x.key, x.name, x.words, 15)
+  if (cat) {
+    const cons = cat.cons.filter(c => c.rank === 1).map(c => ({ c, d: directionOf(cat, 'con:' + c.id, obs, t) })).filter(x => x.d && x.d.alt > 30)
+      .sort((a, b) => b.d!.alt - a.d!.alt).slice(0, 3)
+    for (const { c } of cons) add('con:' + c.id, c.name, c.about, 30)
+  }
+  return out.sort((a, b) => a.az - b.az)
+}
+
+function TourPanel({ tour, onStep, onEnd }: { tour: { steps: TourStep[]; i: number }; onStep: (i: number) => void; onEnd: () => void }) {
+  const st = tour.steps[tour.i]
+  return (
+    <div className="sky-sheet sky-tour" role="dialog" aria-label="Tonight's tour">
+      <div className="sky-sheet-head">
+        <div className="grow"><div className="muted small">Tonight's tour · {tour.i + 1} of {tour.steps.length}</div><div className="sky-sheet-title">{st.name}</div></div>
+        <button type="button" className="btn ghost icon-only" onClick={onEnd} aria-label="End the tour"><Icon name="x" size={18} /></button>
+      </div>
+      <p className="small">{st.text}</p>
+      <div className="row" style={{ gap: 6 }}>
+        <button type="button" className="btn sm" disabled={tour.i === 0} onClick={() => onStep(tour.i - 1)}><Icon name="chevron-left" size={14} />Back</button>
+        <span className="spacer" />
+        {tour.i < tour.steps.length - 1 ? <button type="button" className="btn sm primary" onClick={() => onStep(tour.i + 1)}>Next<Icon name="chevron-right" size={14} /></button>
+          : <button type="button" className="btn sm primary" onClick={onEnd}>Done</button>}
+      </div>
+    </div>
+  )
+}
+
+// ---- lining the compass up on something you can see ----
+
+function LineUp({ obs, t, cat, onPick, onClose }: { obs: { lat: number; lon: number }; t: number; cat: Catalog | null; onPick: (name: string, az: number) => void; onClose: () => void }) {
+  const list = useMemo(() => {
+    const out: { name: string; az: number; alt: number; mag: number }[] = []
+    for (const b of BODIES) {
+      if (b === 'sun') continue
+      const s = at(b, obs, t)
+      if (s.alt > 3 && s.mag < 1.6) out.push({ name: NAMES[b], az: s.az, alt: s.alt, mag: s.mag })
+    }
+    if (cat) {
+      for (const st of cat.stars) {
+        if (st[2] > 1.3) break
+        if (!st[5]) continue
+        const d = directionOf(cat, 'star:' + st[4], obs, t)
+        if (d && d.alt > 5) out.push({ name: st[5], az: d.az, alt: d.alt, mag: st[2] })
+      }
+    }
+    return out.sort((a, b) => a.mag - b.mag).slice(0, 8)
+  }, [obs, t, cat])
+  return (
+    <div className="sky-sheet sky-lineup" role="dialog" aria-label="Line up">
+      <div className="sky-sheet-head">
+        <div className="grow"><div className="sky-sheet-title">Line up</div><div className="muted small">Put the crosshair on one of these in the real sky, then tap its name.</div></div>
+        <button type="button" className="btn ghost icon-only" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
+      </div>
+      {list.length === 0 && <p className="small muted">Nothing bright enough is up now.</p>}
+      <div className="lineup-list">
+        {list.map(x => <button key={x.name} type="button" className="btn sm" onClick={() => onPick(x.name, x.az)}>{x.name}<span className="muted small">{Math.round(x.alt)}° up {dirShort(x.az)}</span></button>)}
       </div>
     </div>
   )

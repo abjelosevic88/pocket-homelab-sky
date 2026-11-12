@@ -126,6 +126,12 @@ export interface View {
   layers: Layers
   magLimit: number
   selected?: string
+  /** draw this object's path across the sky through the night, hour by hour */
+  path?: string
+  /** point an arrow at this object when it is off the screen */
+  guide?: string
+  /** the hour labels on a path, at the place's time */
+  hourLabel?: (t: number) => string
 }
 
 /** The view frame for looking at an altitude and azimuth with no tilt. */
@@ -156,7 +162,10 @@ function clipZ(pts: Vec3[], zmin: number): Vec3[] {
 
 export interface Hit { key: string; name: string; kind: 'body' | 'star' | 'dso' | 'constellation'; x: number; y: number; d: number }
 
+export interface Guide { key: string; onScreen: boolean; x: number; y: number; angle: number; off: number; turn: string }
+
 export interface Painted {
+  guide?: Guide
   hits: { key: string; name: string; kind: Hit['kind']; x: number; y: number; r: number }[]
   /** screen → the sky (J2000 ra/dec, alt/az) */
   unproject: (x: number, y: number) => { ra: number; dec: number; alt: number; az: number } | null
@@ -456,6 +465,78 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cat: C
     ctx.fillText(l.text, x, y)
   }
 
+  // ---- an object's path through the night ----
+  const enuOf = (key: string, tt: number): Vec3 | null => {
+    if ((BODIES as string[]).includes(key)) { const b = at(key as BodyKey, v.obs, tt); return enu(b.alt, b.az) }
+    if (!cat) return null
+    let vv: Vec3 | undefined
+    if (key.startsWith('dso:')) vv = cat.dsos.find(d => d.key === key)?.v
+    else if (key.startsWith('con:')) vv = cat.conLabel.get(key.slice(4))
+    else if (key.startsWith('star:')) { const i = cat.named.get(Number(key.slice(5))); if (i != null) vv = [cat.starVec[i * 3], cat.starVec[i * 3 + 1], cat.starVec[i * 3 + 2]] }
+    if (!vv) return null
+    return apply(horizonMatrix(v.obs, tt), apply(P, vv))
+  }
+  if (v.path) {
+    const start = Math.floor(v.t / 3600000) * 3600000
+    const pts: { p: [number, number] | null; t: number; up: boolean }[] = []
+    for (let k = -2; k <= 12 * 4; k++) {
+      const tt = start + k * 900000
+      const e = enuOf(v.path, tt)
+      if (!e) break
+      const c = camOf(C, e)
+      pts.push({ p: px(c[0], c[1], c[2]), t: tt, up: e[2] > 0 })
+    }
+    ctx.strokeStyle = 'rgba(255, 214, 120, 0.75)'; ctx.lineWidth = 1.4; ctx.setLineDash([3, 4])
+    ctx.beginPath()
+    let pen = false
+    for (const q of pts) {
+      if (!q.p || !q.up) { pen = false; continue }
+      if (!pen) { ctx.moveTo(q.p[0], q.p[1]); pen = true } else ctx.lineTo(q.p[0], q.p[1])
+    }
+    ctx.stroke(); ctx.setLineDash([])
+    ctx.font = '600 10.5px system-ui, sans-serif'
+    for (const q of pts) {
+      if (!q.p || !q.up || (q.t - start) % 3600000 !== 0 || !onScreen(q.p, 0)) continue
+      ctx.fillStyle = 'rgba(255, 214, 120, 0.95)'
+      ctx.beginPath(); ctx.arc(q.p[0], q.p[1], 2.6, 0, Math.PI * 2); ctx.fill()
+      if (v.hourLabel) { ctx.fillStyle = 'rgba(255, 228, 170, 0.9)'; ctx.fillText(v.hourLabel(q.t), q.p[0] + 5, q.p[1] - 5) }
+    }
+  }
+
+  // ---- an arrow to what you are looking for ----
+  let guide: Guide | undefined
+  if (v.guide) {
+    const e = enuOf(v.guide, v.t)
+    if (e) {
+      const c = camOf(C, e)
+      const p = px(c[0], c[1], c[2])
+      const off = Math.acos(Math.max(-1, Math.min(1, c[2]))) * 180 / Math.PI
+      const inView = !!p && p[0] > 30 && p[0] < w - 30 && p[1] > 70 && p[1] < h - 70
+      // which way to turn: the target's direction around the view's centre
+      const ang = Math.atan2(-c[1], c[0])
+      const [ta, tz] = altAz(e)
+      const [fa, fz] = altAz(v.f)
+      const dz = ((tz - fz + 540) % 360) - 180
+      const parts: string[] = []
+      if (Math.abs(dz) > 8) parts.push(dz > 0 ? 'turn right' : 'turn left')
+      if (Math.abs(ta - fa) > 8) parts.push(ta > fa ? 'tilt up' : 'tilt down')
+      if (ta < 0) parts.push('(it is below the horizon now)')
+      guide = { key: v.guide, onScreen: inView, x: p ? p[0] : cx, y: p ? p[1] : cy, angle: ang, off, turn: parts.join(', ') }
+      if (!inView) {
+        // an arrow on the edge of the screen, pointing the way
+        // clear of the bars and the guide banner at the top, the buttons at the bottom
+        const rx = w / 2 - 40, ry = Math.sin(ang) < 0 ? h / 2 - 150 : h / 2 - 120
+        const k = Math.min(rx / Math.abs(Math.cos(ang) || 1e-6), ry / Math.abs(Math.sin(ang) || 1e-6))
+        const ax = cx + Math.cos(ang) * k, ay = cy + Math.sin(ang) * k
+        ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang)
+        ctx.fillStyle = '#ffd166'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 2
+        ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-10, -13); ctx.lineTo(-4, 0); ctx.lineTo(-10, 13); ctx.closePath(); ctx.stroke(); ctx.fill()
+        ctx.restore()
+        guide.x = ax; guide.y = ay
+      }
+    }
+  }
+
   // ---- the selected object ----
   if (v.selected) {
     const hit = out.find(o => o.key === v.selected)
@@ -481,6 +562,7 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cat: C
   const Ct = transpose(C), Ht = transpose(H), Pt = transpose(P)
   return {
     hits: out,
+    guide,
     sunAlt: s,
     project: (e: Vec3) => { const c = camOf(C, e); const p = px(c[0], c[1], c[2]); return p ? [p[0], p[1], c[2]] : null },
     unproject: (x: number, y: number) => {
