@@ -547,16 +547,16 @@ export default function SkyMap() {
 
         {/* bottom bar */}
         <div className="sky-bar bottom">
-          <button type="button" className={`sky-btn ${timeOpen ? 'on' : ''}`} onClick={() => { setBase(live ? Date.now() : t); setTimeOpen(o => !o) }} aria-expanded={timeOpen}><Icon name="clock" size={16} />{timeLabel}</button>
+          <button type="button" className={`sky-btn sky-when ${timeOpen ? 'on' : ''}`} onClick={() => { setBase(live ? Date.now() : t); setTimeOpen(o => !o) }} aria-expanded={timeOpen} title={timeLabel}><Icon name="clock" size={16} /><span className="ellipsis">{live ? <><span className="hide-sm">Now · </span>{fmtAt(t, place?.timezone)}</> : timeLabel}</span></button>
           {!live && <button type="button" className="sky-btn" onClick={() => { setLive(true); setT(Date.now()) }}>Now</button>}
           <span className="spacer" />
           {pointing && <button type="button" className={`sky-btn ${lineUp ? 'on' : ''}`} onClick={() => setLineUp(o => !o)} title="Put the crosshair on the Moon or a bright star, then tap its name"><Icon name="crosshair" size={16} />Line up</button>}
           {!pointing && <button type="button" className="sky-btn icon" onClick={share} aria-label="Share a picture of this sky" title="Share a picture of this sky (set any date in the time panel: the sky on a birthday)"><Icon name="share" size={16} /></button>}
           <button type="button" className={`sky-btn ${tour ? 'on' : ''}`} onClick={() => (tour ? setTour(null) : startTour())} title="Tonight's best sights, one after the other"><Icon name="route" size={16} /><span className={pointing ? '' : 'hide-sm'}>Tour</span></button>
           {!pointing && <>
-            <button type="button" className="sky-btn icon" onClick={() => { view.current.fov = Math.max(8, view.current.fov / 1.4); keepView(); schedule() }} aria-label="Zoom in"><Icon name="plus" size={18} /></button>
-            <button type="button" className="sky-btn icon" onClick={() => { view.current.fov = Math.min(140, view.current.fov * 1.4); keepView(); schedule() }} aria-label="Zoom out"><Icon name="minus" size={18} /></button>
-            <button type="button" className="sky-btn primary" onClick={() => startPointing(true)} title="Hold your phone up to the sky"><Icon name="compass" size={16} />Point at the sky</button>
+            <button type="button" className="sky-btn icon hide-sm" onClick={() => { view.current.fov = Math.max(8, view.current.fov / 1.4); keepView(); schedule() }} aria-label="Zoom in"><Icon name="plus" size={18} /></button>
+            <button type="button" className="sky-btn icon hide-sm" onClick={() => { view.current.fov = Math.min(140, view.current.fov * 1.4); keepView(); schedule() }} aria-label="Zoom out"><Icon name="minus" size={18} /></button>
+            <button type="button" className="sky-btn primary" onClick={() => startPointing(true)} title="Hold your phone up to the sky"><Icon name="compass" size={16} />Point<span className="hide-sm">&nbsp;at the sky</span></button>
           </>}
         </div>
         {timeOpen && (
