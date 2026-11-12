@@ -56,6 +56,10 @@ export class Pointer {
   private sf: Vec3 | null = null
   private su: Vec3 | null = null
   private iosOffset: number | null = null // relative alpha → north
+  private rough = false
+  private outliers = 0
+  /** north is known from a good compass reading (an iPhone needs one upright moment) */
+  northFound = false
   /** the person's own correction, degrees (drag sideways) */
   offset = 0
   heard = false
@@ -85,27 +89,45 @@ export class Pointer {
     let fwd: Vec3 = [-m.Z[0], -m.Z[1], -m.Z[2]]
     let north = 0
     if (!abs && !e.absolute) {
-      // iPhone: line the relative frame up with the compass heading
+      // iPhone: alpha comes from the gyro (smooth, but its zero is wherever the
+      // phone pointed at the start); the compass heading lines it up with north.
+      // The heading is where the top edge points when the phone lies flat, and
+      // where the camera looks when it is held upright; pointing up at the sky
+      // it flips round. So it is only taken in those two poses, slowly, and
+      // a reading far off the rest is ignored unless it stays: the sky never jumps.
       const hd = e.webkitCompassHeading
-      if (typeof hd === 'number' && !isNaN(hd) && (e.webkitCompassAccuracy ?? 0) >= 0) {
-        const flat = Math.abs(e.beta) < 45 && Math.abs(e.gamma) < 45
-        const ref = flat ? m.Y : fwd // the top edge when flat, the camera when held up
-        const target = hd - azOf(ref)
-        if (this.iosOffset == null) this.iosOffset = target
-        else {
-          // circular smoothing
-          const d = ((target - this.iosOffset + 540) % 360) - 180
-          this.iosOffset += d * 0.08
+      const acc = e.webkitCompassAccuracy ?? 0
+      if (typeof hd === 'number' && !isNaN(hd) && acc >= 0 && acc < 45) {
+        const flat = Math.abs(m.Z[2]) > 0.85
+        const upright = Math.abs(fwd[2]) < 0.35
+        const ref = flat ? m.Y : upright ? fwd : null
+        if (ref) {
+          const target = hd - azOf(ref)
+          if (this.iosOffset == null || this.rough) { this.iosOffset = target; this.rough = false }
+          else {
+            const d = ((target - this.iosOffset + 540) % 360) - 180
+            if (Math.abs(d) < 20) { this.iosOffset += d * 0.03; this.outliers = 0 }
+            else if (++this.outliers > 45) { this.iosOffset = target; this.outliers = 0 }
+          }
+          this.northFound = true
+        } else if (this.iosOffset == null) {
+          // first reading while pointing up: a guess, put right once the phone is held upright
+          this.iosOffset = hd - azOf(fwd)
+          this.rough = true
         }
       }
       north = this.iosOffset ?? 0
+    } else {
+      this.northFound = true
     }
     const turn = north + this.offset
     up = rotZ(up, turn)
     fwd = rotZ(fwd, turn)
     // smooth: follow fast movements, calm the shaking
     if (!this.sf || !this.su) { this.sf = fwd; this.su = up } else {
-      const a = 0.22
+      // follow a real turn quickly, calm small shaking
+      const moved = Math.acos(Math.max(-1, Math.min(1, dot(this.sf, fwd)))) / RAD
+      const a = Math.max(0.12, Math.min(0.6, moved / 8))
       this.sf = norm([this.sf[0] + (fwd[0] - this.sf[0]) * a, this.sf[1] + (fwd[1] - this.sf[1]) * a, this.sf[2] + (fwd[2] - this.sf[2]) * a])
       this.su = norm([this.su[0] + (up[0] - this.su[0]) * a, this.su[1] + (up[1] - this.su[1]) * a, this.su[2] + (up[2] - this.su[2]) * a])
     }

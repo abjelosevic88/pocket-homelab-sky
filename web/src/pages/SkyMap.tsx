@@ -54,6 +54,8 @@ export default function SkyMap() {
   const frame = useRef<{ f: [number, number, number]; u: [number, number, number]; r: [number, number, number] } | null>(null)
   const pointer = useRef<Pointer | null>(null)
   const [noSensor, setNoSensor] = useState(false)
+  const [northFound, setNorthFound] = useState(true)
+  const [camErr, setCamErr] = useState('')
   const [selected, setSelected] = useState<string>('')
   const [selName, setSelName] = useState('')
   const [aim, setAim] = useState<{ alt: number; az: number; name: string; key: string } | null>(null)
@@ -258,9 +260,12 @@ export default function SkyMap() {
       const s = await openCamera()
       stream.current = s
       setCamOn(true)
+      setCamErr('')
       requestAnimationFrame(() => { if (video.current) { video.current.srcObject = s; video.current.play().catch(() => {}) } })
     } catch (e) {
-      toast((e as Error).name === 'NotAllowedError' ? 'The camera is not allowed for this site. You can still point the phone without it.' : (e as Error).message, 'err')
+      const msg = (e as Error).name === 'NotAllowedError' ? 'The camera is not allowed for this site (Settings → Safari → Camera, or the aA menu → Website Settings). The stars work without it.' : (e as Error).message
+      setCamErr(msg)
+      toast(msg, 'err')
     }
   }
   const stopCamera = () => { stream.current?.getTracks().forEach(tr => tr.stop()); stream.current = null; setCamOn(false) }
@@ -269,7 +274,7 @@ export default function SkyMap() {
     const ok = await askSensors()
     if (!ok) { toast('Motion and orientation are not allowed for this site.', 'err'); return }
     setSelected('')
-    const p = new Pointer(fr => { frame.current = fr; schedule() })
+    const p = new Pointer(fr => { frame.current = fr; setNorthFound(p.northFound); schedule() })
     pointer.current = p
     p.start()
     setMode('point')
@@ -373,6 +378,8 @@ export default function SkyMap() {
               {aim.name ? <button type="button" className="sky-btn" onClick={() => { setSelected(aim.key); setSelName(aim.name) }}><b>{aim.name}</b></button> : null}
               <span className="sky-aim-dir">{aim.alt}° up · {dirShort(aim.az)} {aim.az}°</span>
             </div>}
+            {!northFound && !noSensor && <div className="sky-hint">Finding north: hold the phone upright for a moment, camera towards the horizon.</div>}
+            {camErr && northFound && !noSensor && <div className="sky-hint">{camErr}</div>}
             {noSensor && <div className="sky-hint">No compass readings yet. Move the phone in a figure of eight; if nothing happens, this device has no compass.</div>}
             <div className="sky-hint soft">Off a little? Drag sideways to line the stars up.{camOn ? ' Pinch to match the camera.' : ''}</div>
           </div>

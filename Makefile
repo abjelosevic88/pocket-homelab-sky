@@ -23,6 +23,7 @@ test:                      ## run Go tests and type-check the UI
 	go vet ./... && go test ./...
 	cd web && npx tsc --noEmit
 	node scripts/astro-vectors.mjs
+	node scripts/pointer-check.mjs
 
 lint:
 	gofmt -l . && go vet ./...

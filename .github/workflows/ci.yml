@@ -21,6 +21,8 @@ jobs:
           go test ./...
       - name: The browser engine answers the same as the server
         run: node scripts/astro-vectors.mjs
+      - name: Pointing the phone follows it without jumping
+        run: node scripts/pointer-check.mjs
       - name: Build binary
         run: CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o pocket-sky ./cmd/pocket-sky
       - name: Smoke test
