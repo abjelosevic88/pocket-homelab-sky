@@ -14,3 +14,7 @@ Positions of the Sun, the Moon and the planets: Paul Schlyter, "How to compute
 planetary positions" (stjarnhimlen.se); precession and eclipses after Jean Meeus,
 "Astronomical Algorithms". Meteor shower figures: International Meteor Organization.
 Cloud forecast: Open-Meteo.com (CC BY 4.0). Place names: © OpenStreetMap contributors.
+Satellite positions: SGP4 written out in Go (internal/sat) after David Vallado's
+reference code, "Revisiting Spacetrack Report #3" (Vallado, Crawford, Hujsak &
+Kelso, AIAA 2006-6753), checked against its published test cases. Orbital
+elements: CelesTrak (celestrak.org).
