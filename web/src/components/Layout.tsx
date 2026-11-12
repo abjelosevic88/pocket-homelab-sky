@@ -120,6 +120,7 @@ function Shell() {
         </div>
         <div className={`main ${loc.pathname === '/map' ? 'main-map' : ''}`}>
           <TopBar onMenu={toggleSidebar} onPalette={() => setPalette(true)} mobile={mobile} compact={narrow} sidebarOpen={sidebarOpen} crumb={crumb} crumbSection={crumbSection} />
+          <Offline />
           <main className="content"><div className="content-inner"><Outlet /></div></main>
         </div>
         {mobile && loc.pathname !== '/map' && <button type="button" className="fab" aria-label="Log a night" title="Log a night" onClick={logNight}><Icon name="plus" size={24} strokeWidth={2.2} /></button>}
@@ -138,7 +139,7 @@ function TopBar({ onMenu, onPalette, mobile, compact, sidebarOpen, crumb, crumbS
   const navigate = useNavigate()
   const loc = useLocation()
   const [section, sectionTo] = SECTION[crumbSection || loc.pathname.split('/')[1] || ''] || ['', '/']
-  const signOut = async () => { await api.post(`${V1}/auth/logout`).catch(() => {}); setUser(null); navigate('/login') }
+  const signOut = async () => { await api.post(`${V1}/auth/logout`).catch(() => {}); navigator.serviceWorker?.controller?.postMessage('forget'); setUser(null); navigate('/login') }
   const avatarMenu = (): MenuItem[] => [
     { heading: user?.name || user?.email || '' },
     { label: 'Profile', icon: 'user', onSelect: () => navigate('/settings/profile') },
@@ -165,4 +166,16 @@ function TopBar({ onMenu, onPalette, mobile, compact, sidebarOpen, crumb, crumbS
       </MenuButton>
     </header>
   )
+}
+
+/** A line under the top bar while there is no connection. */
+function Offline() {
+  const [off, setOff] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false)
+  useEffect(() => {
+    const on = () => setOff(false), down = () => setOff(true)
+    window.addEventListener('online', on); window.addEventListener('offline', down)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', down) }
+  }, [])
+  if (!off) return null
+  return <div className="offline-line"><Icon name="wifi" size={14} />No connection: the map and pointing work, the rest shows what was last loaded. New log entries wait until you are back online.</div>
 }

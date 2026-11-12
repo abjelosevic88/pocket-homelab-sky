@@ -375,6 +375,34 @@ export default function SkyMap() {
     if (withCamera) await startCamera()
   }
 
+  // ---- sharing a picture of the sky ----
+  const share = async () => {
+    const c = canvas.current
+    if (!c) return
+    const out = document.createElement('canvas')
+    const band = Math.round(46 * size.current.dpr)
+    out.width = c.width; out.height = c.height + band
+    const x = out.getContext('2d')!
+    x.drawImage(c, 0, 0)
+    x.fillStyle = '#0b1020'; x.fillRect(0, c.height, out.width, band)
+    x.fillStyle = '#e6ebff'; x.font = `600 ${Math.round(15 * size.current.dpr)}px system-ui, sans-serif`; x.textBaseline = 'middle'
+    const when = `${fmtDayAt(t, place?.timezone, true)} ${fmtAt(t, place?.timezone)}`
+    x.fillText(`The sky over ${place?.name || 'here'} · ${when}`, 14 * size.current.dpr, c.height + band / 2)
+    x.textAlign = 'right'; x.fillStyle = '#9aa5cf'
+    x.fillText('Pocket Sky', out.width - 14 * size.current.dpr, c.height + band / 2)
+    const blob = await new Promise<Blob | null>(res => out.toBlob(res, 'image/png'))
+    if (!blob) return
+    const file = new File([blob], `sky-${new Date(t).toISOString().slice(0, 16).replace(':', '')}.png`, { type: 'image/png' })
+    const nav = navigator as Navigator & { canShare?: (d: { files: File[] }) => boolean }
+    if (nav.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'The sky', text: `The sky over ${place?.name || 'here'}, ${when}` }); return } catch { /* cancelled */ return }
+    }
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(file); a.download = file.name; a.click()
+    window.setTimeout(() => URL.revokeObjectURL(a.href), 4000)
+    toast('Picture saved', 'ok')
+  }
+
   // ---- tonight's tour ----
   const showStep = (steps: TourStep[], i: number) => {
     const st = steps[i]
@@ -523,6 +551,7 @@ export default function SkyMap() {
           {!live && <button type="button" className="sky-btn" onClick={() => { setLive(true); setT(Date.now()) }}>Now</button>}
           <span className="spacer" />
           {pointing && <button type="button" className={`sky-btn ${lineUp ? 'on' : ''}`} onClick={() => setLineUp(o => !o)} title="Put the crosshair on the Moon or a bright star, then tap its name"><Icon name="crosshair" size={16} />Line up</button>}
+          {!pointing && <button type="button" className="sky-btn icon" onClick={share} aria-label="Share a picture of this sky" title="Share a picture of this sky (set any date in the time panel: the sky on a birthday)"><Icon name="share" size={16} /></button>}
           <button type="button" className={`sky-btn ${tour ? 'on' : ''}`} onClick={() => (tour ? setTour(null) : startTour())} title="Tonight's best sights, one after the other"><Icon name="route" size={16} /><span className={pointing ? '' : 'hide-sm'}>Tour</span></button>
           {!pointing && <>
             <button type="button" className="sky-btn icon" onClick={() => { view.current.fov = Math.max(8, view.current.fov / 1.4); keepView(); schedule() }} aria-label="Zoom in"><Icon name="plus" size={18} /></button>

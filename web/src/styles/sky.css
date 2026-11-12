@@ -508,3 +508,4 @@ button.list-row:hover { background: var(--hover); }
 .photo-ann { position: absolute; transform: translate(-50%, -50%); border: 1.5px solid rgba(255, 210, 120, .9); border-radius: 50%; pointer-events: none; }
 .photo-ann span { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 4px; white-space: nowrap; font: 600 11px system-ui, sans-serif; color: #ffe2a8; text-shadow: 0 1px 2px #000, 0 0 4px #000; }
 .photo-ann.ngc, .photo-ann.ic { border-color: rgba(140, 220, 255, .9); }
+.offline-line { display: flex; align-items: center; gap: 8px; padding: 6px 16px; font-size: 12.5px; background: var(--warning-soft); color: color-mix(in srgb, var(--warning) 75%, var(--text)); }

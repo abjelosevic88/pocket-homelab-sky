@@ -50,6 +50,11 @@ function App() {
   )
 }
 
+// Works without signal at a dark site (public/sw.js).
+if ('serviceWorker' in navigator && window.isSecureContext && location.port !== '5173') {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}) })
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
