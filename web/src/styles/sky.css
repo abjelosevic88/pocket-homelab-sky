@@ -488,3 +488,23 @@ button.list-row:hover { background: var(--hover); }
 .moon-label.sea { background: none; color: rgba(255, 255, 255, .75); font-style: italic; }
 .moon-label.best { background: rgba(255, 196, 92, .85); color: #2a1c00; font-weight: 650; }
 .moon-side .list.bordered { max-height: 260px; overflow-y: auto; }
+.plan-row { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-top: 1px solid var(--border); }
+.list > .plan-row:first-child { border-top: 0; }
+.plan-row.done .row-title { text-decoration: line-through; color: var(--muted); }
+.plan-time { width: 64px; flex-shrink: 0; font-weight: 650; font-size: 13px; }
+@media print {
+  .sidebar-wrap, .topbar, .fab, .no-print, .drawer-backdrop { display: none !important; }
+  .app, .main, .content, .content-inner { display: block !important; overflow: visible !important; height: auto !important; padding: 0 !important; }
+  .card { box-shadow: none !important; break-inside: avoid; }
+}
+.photo-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.photo-thumb, .photo-add { position: relative; width: 84px; height: 84px; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); padding: 0; cursor: pointer; }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--muted); font: inherit; }
+.photo-badge { position: absolute; right: 4px; bottom: 4px; width: 18px; height: 18px; border-radius: 50%; background: var(--success); color: #fff; display: grid; place-items: center; }
+.photo-view { display: grid; gap: 10px; }
+.photo-frame { position: relative; max-width: 100%; }
+.photo-frame img { display: block; max-width: 100%; max-height: 70vh; border-radius: 8px; }
+.photo-ann { position: absolute; transform: translate(-50%, -50%); border: 1.5px solid rgba(255, 210, 120, .9); border-radius: 50%; pointer-events: none; }
+.photo-ann span { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 4px; white-space: nowrap; font: 600 11px system-ui, sans-serif; color: #ffe2a8; text-shadow: 0 1px 2px #000, 0 0 4px #000; }
+.photo-ann.ngc, .photo-ann.ic { border-color: rgba(140, 220, 255, .9); }

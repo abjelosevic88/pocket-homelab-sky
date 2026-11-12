@@ -41,7 +41,7 @@ func (s *Server) publicSettings(ctx context.Context, u *store.User, st store.Set
 		"camera_fov": st.CameraFOV, "cloud_max": st.CloudMax, "red_spot_lon": st.RedSpotLon,
 		"notify_clear": st.NotifyClear, "notify_events": st.NotifyEvents, "event_kinds": st.EventKinds, "event_kinds_all": store.EventKinds, "notify_hour": st.NotifyHour,
 		"notify_url": st.NotifyURL, "notify_format": st.NotifyFormat, "notify_configured": st.NotifyURL != "", "push_phone": st.PushPhone,
-		"ai_plan":     st.AIPlan,
+		"ai_plan": st.AIPlan, "ai_photos": st.AIPhotos, "astrometry_key": mask(st.AstrometryKey),
 		"ai_provider": st.AIProvider, "ai_pocket_model": st.AIPocketModel, "openai_api_key": mask(st.OpenAIKey), "openai_model": st.OpenAIModel, "openai_base_url": st.OpenAIBaseURL,
 		"setup_complete": st.SetupComplete, "base_url": s.cfg.BaseURL,
 	}
@@ -160,7 +160,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	for k, dst := range map[string]*bool{"show_lines": &cur.ShowLines, "show_con_names": &cur.ShowConNames, "show_star_names": &cur.ShowStarNames,
 		"show_dso": &cur.ShowDSO, "show_milky_way": &cur.ShowMilkyWay, "show_grid": &cur.ShowGrid, "show_equator": &cur.ShowEquator,
-		"show_ecliptic": &cur.ShowEcliptic, "night_red": &cur.NightRed, "push_phone": &cur.PushPhone, "notify_clear": &cur.NotifyClear, "notify_events": &cur.NotifyEvents, "ai_plan": &cur.AIPlan} {
+		"show_ecliptic": &cur.ShowEcliptic, "night_red": &cur.NightRed, "push_phone": &cur.PushPhone, "notify_clear": &cur.NotifyClear, "notify_events": &cur.NotifyEvents, "ai_plan": &cur.AIPlan, "ai_photos": &cur.AIPhotos} {
 		if v, ok := raw[k].(bool); ok && keys[k] {
 			*dst = v
 		}
@@ -203,6 +203,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		cur.AIPocketModel = in.AIPocketModel
 	}
 	secret("openai_api_key", &cur.OpenAIKey, in.OpenAIKey)
+	secret("astrometry_key", &cur.AstrometryKey, in.AstrometryKey)
 	text("openai_model", &cur.OpenAIModel, in.OpenAIModel)
 	url("openai_base_url", &cur.OpenAIBaseURL, in.OpenAIBaseURL)
 	if err := s.store.SaveUserSettings(r.Context(), me.ID, cur); err != nil {

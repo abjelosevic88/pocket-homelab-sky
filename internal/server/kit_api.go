@@ -104,7 +104,7 @@ type planView struct {
 	*store.Plan
 	Items []planItemView `json:"items"`
 	Place map[string]any `json:"place"`
-	Night *astro.Night   `json:"night"`
+	Dark  *astro.Night   `json:"night_info"`
 }
 
 // timeItems works out when each item is best on the plan's night.
@@ -129,7 +129,7 @@ func (s *Server) timeItems(ctx context.Context, uid int64, p *store.Plan) planVi
 		v.Place = wh.view()
 		if nn, err := astro.NightAt(wh.Obs, p.Night, wh.TZ); err == nil {
 			n = nn
-			v.Night = &n
+			v.Dark = &n
 			from, to = nightWindow(n)
 		}
 	}

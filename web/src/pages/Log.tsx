@@ -12,6 +12,7 @@ import { useCrumb } from '../components/Layout'
 import { Icon } from '../components/icons'
 import { MoonGlyph } from '../components/SkyBits'
 import { ObjectPicker } from '../components/ObjectPicker'
+import { PhotoStrip } from '../components/PhotoStrip'
 import { Select } from '../components/Select'
 import { Card, Confirm, Empty, Field, Loading, Modal, Segmented, Spinner, useDebounce, useToast } from '../components/ui'
 
@@ -200,6 +201,9 @@ export function LogForm({ o, prefill, onClose, onSaved }: { o: Observation | nul
           <Field label="Cloud"><Segmented size="sm" value={f.cloud == null ? -1 : f.cloud} onChange={v => setF({ ...f, cloud: v < 0 ? null : v })} options={[{ value: -1, label: '–' }, { value: 0, label: 'Clear' }, { value: 25, label: 'Some' }, { value: 50, label: 'Half' }, { value: 75, label: 'Mostly' }]} label="Cloud" /></Field>
           <Field label="How good was the night?"><Segmented size="sm" value={f.rating} onChange={v => setF({ ...f, rating: v })} options={[0, ...RATING].map(n => ({ value: n, label: n ? '★'.repeat(n) : '–' }))} label="Rating" /></Field>
         </div>
+        <Field label="Photos" group help={o ? 'Photos of the night; “What\'s in this photo?” names the stars and objects in them.' : 'Save the night first, then add its photos.'}>
+          {o ? <PhotoStrip observationId={o.id} /> : <p className="muted small">After saving.</p>}
+        </Field>
         <Field label="Notes"><textarea rows={4} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} maxLength={20000} placeholder="What you saw, who came, what to try next time." /></Field>
       </form>
       {del && o && <Confirm title="Delete this night?" message="What you saw that night goes with it." confirmLabel="Delete" onCancel={() => setDel(false)}

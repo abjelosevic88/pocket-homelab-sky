@@ -19,6 +19,7 @@ export function Sidebar({ onAdd, onNavigate }: { onAdd: () => void; onNavigate: 
     { to: '/events', label: 'Sky events', icon: 'calendar' },
     { to: '/log', label: 'Observing log', icon: 'journal' },
     { to: '/lists', label: 'Lists', icon: 'target' },
+    { to: '/plans', label: 'Plans and equipment', icon: 'telescope' },
     { to: '/places', label: 'Places', icon: 'pin' },
   ]
   const places = overview?.places || []

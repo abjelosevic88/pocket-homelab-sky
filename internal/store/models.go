@@ -147,7 +147,9 @@ type Settings struct {
 	PushPhone    bool     `json:"push_phone"`    // also to the phones with Pocket Hub, through Pocket Core
 
 	// AI: the night in plain words on Tonight.
-	AIPlan bool `json:"ai_plan"`
+	AIPlan        bool   `json:"ai_plan"`
+	AIPhotos      bool   `json:"ai_photos"`      // the AI may look at photos ("what is in this photo?")
+	AstrometryKey string `json:"astrometry_key"` // nova.astrometry.net API key, to identify photos exactly
 
 	// Each sibling Pocket app, by slug.
 	Conns map[string]Conn `json:"conns"`

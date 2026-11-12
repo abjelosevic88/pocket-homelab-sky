@@ -101,6 +101,7 @@ function Shell() {
     { id: 'events', label: 'Sky events', icon: 'calendar', hint: 'E', keywords: 'eclipse meteor shower conjunction opposition full moon solstice equinox', run: () => navigate('/events') },
     { id: 'lists', label: 'Lists: want to see, Messier', icon: 'target', hint: 'S', keywords: 'messier progress checklist constellations planets seen', run: () => navigate('/lists') },
     { id: 'logpage', label: 'Observing log', icon: 'journal', hint: 'L', keywords: 'history nights diary', run: () => navigate('/log') },
+    { id: 'plans', label: 'Observing plans and equipment', icon: 'telescope', keywords: 'plan list telescope eyepiece binoculars camera field of view skysafari stellarium print', run: () => navigate('/plans') },
     { id: 'places', label: 'Places', icon: 'pin', hint: 'P', keywords: 'locations home dark sky bortle', run: () => navigate('/places') },
     { id: 'add', label: 'Add a place', icon: 'plus', hint: 'A', keywords: 'new location search', run: add },
     { id: 'settings', label: 'Settings', icon: 'settings', hint: ',', run: () => navigate('/settings') },
@@ -130,7 +131,7 @@ function Shell() {
   )
 }
 
-const SECTION: Record<string, [string, string]> = { '': ['Tonight', '/'], map: ['Sky map', '/map'], events: ['Sky events', '/events'], log: ['Observing log', '/log'], lists: ['Lists', '/lists'], places: ['Places', '/places'] }
+const SECTION: Record<string, [string, string]> = { '': ['Tonight', '/'], map: ['Sky map', '/map'], events: ['Sky events', '/events'], log: ['Observing log', '/log'], lists: ['Lists', '/lists'], plans: ['Plans and equipment', '/plans'], places: ['Places', '/places'] }
 
 function TopBar({ onMenu, onPalette, mobile, compact, sidebarOpen, crumb, crumbSection }: { onMenu: () => void; onPalette: () => void; mobile: boolean; compact: boolean; sidebarOpen: boolean; crumb: string; crumbSection: string }) {
   const { user, themeMode, setThemeMode, status, setUser } = useApp()

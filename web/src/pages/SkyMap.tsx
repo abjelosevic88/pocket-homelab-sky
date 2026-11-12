@@ -12,6 +12,7 @@ import { Pointer, askSensors, openCamera, sensorsAvailable } from '../lib/orient
 import { placeQuery, usePlace } from '../lib/place'
 import { type Catalog, type Guide, type Layers, type Painted, directionOf, draw, frameOf, hitTest, loadCatalog, registerExtra, starLabel } from '../lib/sky'
 import { MoonMapButton, PlanetDetail } from '../components/SkyDetails'
+import { type Kit, type Setup, savedFov, saveFov, setups } from '../lib/kit'
 import type { ObjectDetail, SatNow, Settings, SkyObject, Tonight } from '../lib/types'
 import { Icon } from '../components/icons'
 import { PlacePicker } from '../components/PlacePicker'
@@ -69,6 +70,9 @@ export default function SkyMap() {
   const sats = useRef<{ at: number; list: SatNow[] } | null>(null)
   const [satSel, setSatSel] = useState<SatNow | null>(null)
   const minor = useRef<MinorObj[]>([])
+  const [kit, setKit] = useState<Kit[]>([])
+  const [fov, setFov] = useState<Setup | null>(savedFov)
+  useEffect(() => { api.get<Kit[]>(`${V1}/kit`).then(setKit).catch(() => {}) }, [])
   const [minorSel, setMinorSel] = useState<MinorObj | null>(null)
   const painted = useRef<Painted | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -90,6 +94,8 @@ export default function SkyMap() {
   const tz = place?.timezone
   const stateRef = useRef({ t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov, path, guideKey, tz, live })
   stateRef.current = { t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov, path, guideKey, tz, live }
+  const fovRef = useRef(fov)
+  fovRef.current = fov
 
   const paint = useCallback(() => {
     raf.current = 0
@@ -123,6 +129,24 @@ export default function SkyMap() {
       minor: minor.current,
     })
     painted.current = p
+    // the field of view of the chosen equipment, at the centre
+    const fv = fovRef.current
+    if (fv) {
+      const half = (deg: number, axis: [number, number, number]) => {
+        const a = (deg / 2) * Math.PI / 180
+        const e: [number, number, number] = [fr.f[0] * Math.cos(a) + axis[0] * Math.sin(a), fr.f[1] * Math.cos(a) + axis[1] * Math.sin(a), fr.f[2] * Math.cos(a) + axis[2] * Math.sin(a)]
+        const q = p.project(e)
+        return q ? Math.hypot(q[0] - w / 2, q[1] - h / 2) : 0
+      }
+      ctx.save()
+      ctx.strokeStyle = 'rgba(255, 120, 120, 0.9)'; ctx.lineWidth = 1.5
+      ctx.beginPath()
+      if (fv.h) { const hw = half(fv.w, fr.r), hh = half(fv.h, fr.u); ctx.rect(w / 2 - hw, h / 2 - hh, hw * 2, hh * 2) } else { ctx.arc(w / 2, h / 2, half(fv.w, fr.u), 0, Math.PI * 2) }
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(255, 150, 150, 0.95)'; ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center'
+      ctx.fillText(fv.label, w / 2, h / 2 + (fv.h ? half(fv.h, fr.u) : half(fv.w, fr.u)) + 14)
+      ctx.restore()
+    }
     if (st.mode === 'point') {
       const g = p.guide || null
       setGuide(prev => (!g && !prev) || (g && prev && prev.key === g.key && prev.onScreen === g.onScreen && prev.turn === g.turn) ? prev : g)
@@ -139,7 +163,7 @@ export default function SkyMap() {
   }, [cat])
 
   const schedule = useCallback(() => { if (!raf.current) raf.current = requestAnimationFrame(paint) }, [paint])
-  useEffect(() => { schedule() }, [schedule, t, obs, layers, mode, camOn, selected, cat, settings?.mag_limit, camFov, path, guideKey])
+  useEffect(() => { schedule() }, [schedule, t, obs, layers, mode, camOn, selected, cat, settings?.mag_limit, camFov, path, guideKey, fov])
 
   // canvas size
   useEffect(() => {
@@ -196,6 +220,17 @@ export default function SkyMap() {
     if (view.current.fov > 100) view.current.fov = 80
     keepView(); schedule()
   }, [cat, schedule])
+
+  // ?plan=ID tours that observing plan
+  useEffect(() => {
+    const pid = sp.get('plan')
+    if (!pid || !cat || !obs) return
+    api.get<{ items: { key: string; name: string; words?: string; note: string }[] }>(`${V1}/plans/${pid}`).then(pl => {
+      const steps: TourStep[] = pl.items.map(it => ({ key: it.key, name: it.name, text: [it.words, it.note].filter(Boolean).join(' '), az: 0 }))
+      if (steps.length) showStep(steps, 0)
+    }).catch(() => {})
+    const next = new URLSearchParams(sp); next.delete('plan'); setSp(next, { replace: true })
+  }, [sp, cat, obs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ?object=dso:M31 opens it
   useEffect(() => {
@@ -375,6 +410,11 @@ export default function SkyMap() {
     'sep',
     { heading: 'Stars' },
     ...[4, 5, 5.5, 6, 6.5].map(m => ({ label: m <= 4 ? 'Bright stars only' : m === 6.5 ? 'All the stars (dark sky)' : `Down to magnitude ${m}`, checked: Math.abs((settings?.mag_limit ?? 5.5) - m) < 0.01, onSelect: () => saveSetting({ mag_limit: m }) })),
+    'sep',
+    { heading: 'Field of view' },
+    { label: 'None', checked: !fov, onSelect: () => { setFov(null); saveFov(null) } },
+    ...setups(kit).map(su => ({ label: su.label, checked: fov?.id === su.id, onSelect: () => { setFov(su); saveFov(su) } })),
+    ...(kit.length === 0 ? [{ label: 'Add your equipment…', onSelect: () => navigate('/plans') }] : []),
   ]
 
   // ---- search ----

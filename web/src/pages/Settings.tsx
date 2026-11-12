@@ -167,6 +167,9 @@ function MapTab() {
         <SettingRow title="Faintest stars"><Select ariaLabel="Faintest stars" value={String(f.mag_limit)} onChange={v => setF({ ...f, mag_limit: Number(v) })} options={MAGS} /></SettingRow>
       </Section>
       <Section title="Pointing the phone at the sky" icon="compass" sub="With “Point at the sky” the map follows the phone's compass and tilt; the camera picture can show behind the stars.">
+        <SettingRow title="Jupiter's Great Red Spot" help="Its longitude (System II) drifts a little each year; the amateur JUPOS team publishes it. The times it faces us follow from it.">
+          <span className="row small" style={{ gap: 6 }}><input type="number" min={0} max={360} className="set-time" value={f.red_spot_lon} onChange={e => setF({ ...f, red_spot_lon: Number(e.target.value) })} />°</span>
+        </SettingRow>
         <SettingRow title="The camera's view" help="How much of the sky the camera sees along the long side of the screen. Pinching with the camera on sets it too. Most phones: 60–70°.">
           <span className="row small" style={{ gap: 6 }}><input type="number" min={20} max={120} className="set-time" value={f.camera_fov} onChange={e => setF({ ...f, camera_fov: Number(e.target.value) })} />°</span>
         </SettingRow>
@@ -190,6 +193,7 @@ function NotifyTab() {
         sub={<>An Apprise gateway (<code>…/notify/&lt;key&gt;</code>), an ntfy topic URL, or any webhook that takes JSON.</>}>
         <SettingRow title="URL" stack><input value={f.notify_url} onChange={e => setF({ ...f, notify_url: e.target.value })} placeholder="http://apprise:8000/notify/sky" /></SettingRow>
         <SettingRow title="Format"><Segmented value={f.notify_format} onChange={v => setF({ ...f, notify_format: v })} options={[{ value: 'apprise', label: 'Apprise' }, { value: 'ntfy', label: 'ntfy' }, { value: 'json', label: 'JSON' }]} size="sm" /></SettingRow>
+        <SettingRow title="To your phones too" help="Through Pocket Core to the phones and Macs with Pocket Hub and notifications on."><Switch checked={f.push_phone} disabled={!(f.core_configured && f.core_registered !== false)} onChange={v => setF({ ...f, push_phone: v })} label="Phones" /></SettingRow>
         <SettingRow title="In the evening at" help="One message at most, at your home's time; nothing to say, no message."><Select ariaLabel="Hour" value={String(f.notify_hour)} onChange={v => setF({ ...f, notify_hour: Number(v) })} options={HOURS} /></SettingRow>
       </Section>
       <Section title="Tell me about" icon="moon">
@@ -263,6 +267,12 @@ function AITab() {
         <SettingRow title="Plan the night by itself" help="When you open Tonight (kept two hours). Off: only when you press Plan my night."><Switch checked={f.ai_plan} onChange={v => setF({ ...f, ai_plan: v })} label="Plan the night" /></SettingRow>
         {ai && (ai.ready ? <p className="muted small row" style={{ gap: 6 }}><Icon name="sparkles" size={13} />{ai.provider === 'pocket' ? 'Pocket AI' : 'Your OpenAI key'} is ready.</p>
           : <div className="callout info"><Icon name="info" size={15} /><div>No AI connected{ai.detail ? ` (${ai.detail})` : ''}.{!coreOn && <CoreHint />}</div></div>)}
+      </Section>
+      <Section title="Photos of the sky" icon="camera" sub="“What's in this photo?” on a photo in your log. With a free astrometry.net key the stars' pattern is matched exactly and every star and object is named on the photo; without one, the AI describes what it sees.">
+        <SettingRow title="astrometry.net API key" help={<>Free: sign in at nova.astrometry.net, then My Profile → API key. Your photos are sent there marked private.</>} stack>
+          <input value={f.astrometry_key || ''} onChange={e => setF({ ...f, astrometry_key: e.target.value })} autoComplete="off" placeholder="abcdefghijklmnop" />
+        </SettingRow>
+        <SettingRow title="Let the AI look at photos" help="Only when you ask about a photo."><Switch checked={f.ai_photos} onChange={v => setF({ ...f, ai_photos: v })} label="AI photos" /></SettingRow>
       </Section>
       <Section title="Provider" icon="sparkles">
         <div className="grid" style={{ gap: 12 }}>

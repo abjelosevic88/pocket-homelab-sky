@@ -1,7 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	"image/png"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -310,4 +315,65 @@ func TestSatellites(t *testing.T) {
 	if _, ok := now["satellites"].([]any); !ok {
 		t.Fatalf("now: %v", now)
 	}
+}
+
+func TestKitPlansPhotos(t *testing.T) {
+	a := newApp(t, nil)
+	home := addPlace(a, a.alice, "Home", 43.8563, 18.4131)
+	b := a.ok(a.alice, "POST", "/api/v1/kit", map[string]any{"kind": "binoculars", "name": "10×50", "power": 10, "aperture": 50})
+	if num(b, "tfov") < 4 || num(b, "tfov") > 6 {
+		t.Fatalf("binocular field filled in: %v", b)
+	}
+	a.expect(400, a.alice, "POST", "/api/v1/kit", map[string]any{"kind": "telescope", "name": "no numbers"})
+	a.expect(404, a.bob, "PUT", "/api/v1/kit/"+id(b), map[string]any{"kind": "binoculars", "name": "mine", "power": 7, "aperture": 35})
+	p := a.ok(a.alice, "POST", "/api/v1/plans", map[string]any{"name": "Autumn night", "night": "2026-11-12", "location_id": home["id"],
+		"items": []map[string]any{{"key": "jupiter"}, {"key": "dso:M31"}, {"key": "dso:M45"}, {"key": "dso:M13"}}})
+	items := p["items"].([]any)
+	if len(items) != 4 || items[1].(map[string]any)["best_at"] == nil {
+		t.Fatalf("plan: %v", p)
+	}
+	o := a.ok(a.alice, "POST", "/api/v1/plans/"+id(p)+"/order", nil)
+	first := o["items"].([]any)[0].(map[string]any)["key"]
+	if first == "jupiter" {
+		t.Fatalf("Jupiter rises late on that night; it should not be first: %v", o["items"])
+	}
+	a.expect(404, a.bob, "GET", "/api/v1/plans/"+id(p), nil)
+	for _, f := range []string{"skysafari", "stellarium", "csv"} {
+		req, _ := http.NewRequest("GET", a.url+"/api/v1/plans/"+id(p)+"/export?format="+f, nil)
+		req.Header.Set("Authorization", "Bearer "+a.alice)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil || res.StatusCode != 200 {
+			t.Fatalf("export %s: %v %v", f, err, res.StatusCode)
+		}
+		var buf strings.Builder
+		_, _ = io.Copy(&buf, res.Body)
+		res.Body.Close()
+		if !strings.Contains(buf.String(), "31") {
+			t.Fatalf("export %s has no M31: %s", f, buf.String())
+		}
+	}
+	// a photo: a 2×2 PNG
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	fw, _ := mw.CreateFormFile("file", "sky.png")
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	_ = png.Encode(fw, img)
+	_ = mw.WriteField("caption", "Orion")
+	_ = mw.Close()
+	req, _ := http.NewRequest("POST", a.url+"/api/v1/photos", body)
+	req.Header.Set("Authorization", "Bearer "+a.alice)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	res, err := http.DefaultClient.Do(req)
+	if err != nil || res.StatusCode != 201 {
+		t.Fatalf("upload: %v %v", err, res.StatusCode)
+	}
+	ph := map[string]any{}
+	_ = json.NewDecoder(res.Body).Decode(&ph)
+	res.Body.Close()
+	if num(ph, "width") != 2 || ph["caption"] != "Orion" {
+		t.Fatalf("photo: %v", ph)
+	}
+	a.expect(404, a.bob, "GET", "/api/v1/photos/"+id(ph)+"/file", nil)
+	a.expect(404, a.bob, "DELETE", "/api/v1/photos/"+id(ph), nil)
+	a.expect(204, a.alice, "DELETE", "/api/v1/photos/"+id(ph), nil)
 }

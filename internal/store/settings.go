@@ -18,7 +18,7 @@ func (s *Store) defaults() Settings {
 		MagLimit: 5.5, ShowLines: true, ShowConNames: true, ShowStarNames: true, ShowDSO: true, ShowMilkyWay: true,
 		ShowGrid: false, ShowEquator: false, ShowEcliptic: true, NightRed: false, CameraFOV: 64, RedSpotLon: 60,
 		CloudMax: 35, NotifyClear: true, NotifyEvents: true, EventKinds: DefaultEventKinds(), NotifyHour: s.NotifyHour, NotifyFormat: "apprise", PushPhone: true,
-		AIPlan: true, Conns: map[string]Conn{}, AIProvider: "auto"}
+		AIPlan: true, AIPhotos: true, Conns: map[string]Conn{}, AIProvider: "auto"}
 }
 
 // EventKinds are the sky events a person can be told about.

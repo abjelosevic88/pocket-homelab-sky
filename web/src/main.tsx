@@ -15,6 +15,7 @@ import SkyMap from './pages/SkyMap'
 import Events from './pages/Events'
 import LogPage from './pages/Log'
 import Lists from './pages/Lists'
+import PlansPage from './pages/Plans'
 import PlacesPage from './pages/Places'
 import Settings from './pages/Settings'
 
@@ -40,6 +41,8 @@ function App() {
         <Route path="/log" element={<LogPage />} />
         <Route path="/log/:id" element={<LogPage />} />
         <Route path="/lists" element={<Lists />} />
+        <Route path="/plans" element={<PlansPage />} />
+        <Route path="/plans/:id" element={<PlansPage />} />
         <Route path="/places" element={<PlacesPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

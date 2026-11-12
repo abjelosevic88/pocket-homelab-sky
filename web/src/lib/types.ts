@@ -18,7 +18,7 @@ export type Settings = ConnFields & {
   show_grid: boolean; show_equator: boolean; show_ecliptic: boolean; night_red: boolean; camera_fov: number; cloud_max: number
   notify_clear: boolean; notify_events: boolean; event_kinds: EventKind[]; event_kinds_all: EventKind[]; notify_hour: number
   notify_url: string; notify_format: string; notify_configured: boolean
-  ai_plan: boolean
+  ai_plan: boolean; ai_photos: boolean; astrometry_key: string; push_phone: boolean; red_spot_lon: number
   ai_provider: 'auto' | 'pocket' | 'openai'; ai_pocket_model: string; openai_api_key: string; openai_model: string; openai_base_url: string
   setup_complete: boolean; base_url: string
 }
