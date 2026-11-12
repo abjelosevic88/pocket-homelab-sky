@@ -54,6 +54,7 @@ func newApp(t *testing.T, tweak func(*config.Config)) *app {
 	t.Cleanup(cancel)
 	a.s = New(cfg, st, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	a.s.wx = forecast.Demo{} // never the network in tests
+	a.s.noNet = true
 	if err := a.s.Bootstrap(ctx); err != nil {
 		t.Fatal(err)
 	}

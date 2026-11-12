@@ -14,6 +14,7 @@ import (
 	"github.com/abjelosevic88/pocket-homelab-sky/internal/astro"
 	"github.com/abjelosevic88/pocket-homelab-sky/internal/catalog"
 	"github.com/abjelosevic88/pocket-homelab-sky/internal/forecast"
+	"github.com/abjelosevic88/pocket-homelab-sky/internal/space"
 	"github.com/abjelosevic88/pocket-homelab-sky/internal/store"
 )
 
@@ -176,7 +177,9 @@ type nightHour struct {
 	Wind    *float64  `json:"wind"`
 	SunAlt  float64   `json:"sun_alt"`
 	MoonAlt float64   `json:"moon_alt"`
-	Dark    bool      `json:"dark"` // the Sun is 18° down (or as dark as it gets)
+	Dark    bool      `json:"dark"`         // the Sun is 18° down (or as dark as it gets)
+	Seeing  *int      `json:"seeing"`       // steady air 1–5 (7Timer!, every three hours)
+	Transp  *int      `json:"transparency"` // clear air 1–5
 }
 
 type score struct {
@@ -252,6 +255,9 @@ type tonightView struct {
 	Events     []astro.Event  `json:"events"`
 	Stale      bool           `json:"stale"`
 	ForecastAt string         `json:"forecast_at"`
+	Air        *airView       `json:"air"`
+	Aurora     *auroraView    `json:"aurora"`
+	Darkness   *darknessView  `json:"darkness"`
 }
 
 // nightWindow is the part of the night planets and sights are judged in:
@@ -404,7 +410,7 @@ func moonTonight(o astro.Observer, n astro.Night, tz *time.Location) moonView {
 }
 
 // hoursOf is the night hour by hour: sunset to sunrise, with the forecast.
-func hoursOf(o astro.Observer, n astro.Night, f *forecast.Forecast) []nightHour {
+func hoursOf(o astro.Observer, n astro.Night, f *forecast.Forecast, air *space.Air) []nightHour {
 	from, to := n.DarkFrom.Add(-2*time.Hour), n.DarkTo.Add(2*time.Hour)
 	if n.Sunset != nil {
 		from = *n.Sunset
@@ -418,6 +424,10 @@ func hoursOf(o astro.Observer, n astro.Night, f *forecast.Forecast) []nightHour 
 		mid := t.Add(30 * time.Minute)
 		h := nightHour{Time: t, SunAlt: math.Round(astro.At("sun", o, mid).Alt*10) / 10, MoonAlt: math.Round(astro.At("moon", o, mid).Alt*10) / 10}
 		h.Dark = !mid.Before(n.DarkFrom) && mid.Before(n.DarkTo)
+		if ah := air.At(mid); ah != nil {
+			sv, tv := ah.Seeing, ah.Transparency
+			h.Seeing, h.Transp = &sv, &tv
+		}
 		if fh := f.At(t); fh != nil {
 			h.Cloud, h.Low, h.Mid, h.High, h.Humid, h.Temp, h.Dew, h.Wind = fh.Cloud, fh.Low, fh.Mid, fh.High, fh.Humidity, fh.Temp, fh.Dew, fh.Wind
 		}
@@ -605,12 +615,21 @@ func (s *Server) tonight(ctx context.Context, uid int64, w where, date string) (
 	if ferr != nil {
 		f = nil
 	}
-	hours := hoursOf(w.Obs, n, f)
+	air := s.airAt(ctx, w.Obs.Lat, w.Obs.Lon)
+	hours := hoursOf(w.Obs, n, f, air)
 	v := &tonightView{Place: w.view(), Date: date, Night: n, Hours: hours, Stale: stale}
+	v.Air = airOf(hours, n)
+	v.Aurora = s.auroraTonight(ctx, w, n)
+	v.Darkness = s.darknessAt(w.Obs.Lat, w.Obs.Lon)
 	if f != nil {
 		v.ForecastAt = f.Fetched
 	}
 	v.Score = scoreNight(n, hours, st.CloudMax, w.TZ)
+	if v.Air != nil && v.Air.Transparency > 0 && v.Score.Forecast {
+		// hazy air dims the faint things: up to a fifth off
+		v.Score.Value = int(math.Round(float64(v.Score.Value) * (0.8 + 0.05*float64(v.Air.Transparency-1))))
+		v.Score.Words += " " + v.Air.Words
+	}
 	v.Moon = moonTonight(w.Obs, n, w.TZ)
 	v.Planets = planetsTonight(w.Obs, n, w.TZ)
 	seen, _ := s.store.SeenObjects(ctx, uid)
@@ -663,6 +682,7 @@ func (s *Server) nights(ctx context.Context, uid int64, w where, days int) []nig
 	if err != nil {
 		f = nil
 	}
+	air := s.airAt(ctx, w.Obs.Lat, w.Obs.Lon)
 	start := nightDate(time.Now(), w.TZ)
 	out := []nightSummary{}
 	for i := 0; i < days; i++ {
@@ -671,7 +691,7 @@ func (s *Server) nights(ctx context.Context, uid int64, w where, days int) []nig
 		if err != nil {
 			continue
 		}
-		hours := hoursOf(w.Obs, n, f)
+		hours := hoursOf(w.Obs, n, f, air)
 		out = append(out, nightSummary{Date: d, Score: scoreNight(n, hours, st.CloudMax, w.TZ), DarkFrom: n.DarkFrom, DarkTo: n.DarkTo, DarkKind: n.DarkKind,
 			DarkHours: math.Round(n.DarkHours*10) / 10, MoonPhase: math.Round(n.MoonPhase*100) / 100, MoonName: astro.MoonPhaseName(n.MoonAge), MoonUp: math.Round(n.MoonUpDark*100) / 100})
 	}

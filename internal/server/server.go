@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	core "github.com/abjelosevic88/pocket-homelab-core/sdk"
 	"github.com/abjelosevic88/pocket-homelab-sky/internal/config"
 	"github.com/abjelosevic88/pocket-homelab-sky/internal/forecast"
+	"github.com/abjelosevic88/pocket-homelab-sky/internal/lightmap"
 	"github.com/abjelosevic88/pocket-homelab-sky/internal/store"
 )
 
@@ -35,6 +37,11 @@ type Server struct {
 
 	wx      forecast.Source // Open-Meteo, or the demo's made-up skies
 	wxLocks wxLocks
+	http    *http.Client // 7Timer!, NOAA, the light-pollution atlas
+
+	lmMu  sync.Mutex
+	lm    *lightmap.Map
+	noNet bool // tests: no outside services
 
 	oidcMu sync.Mutex
 	oidc   *oidcProvider // for the issuer in use; rebuilt when it changes
@@ -59,7 +66,7 @@ func New(cfg *config.Config, st *store.Store, log *slog.Logger, webFS fs.FS) *Se
 	if cfg.DemoData {
 		wx = forecast.Demo{}
 	}
-	return &Server{cfg: cfg, store: st, log: log, webFS: webFS, started: time.Now(), oidc: &oidcProvider{}, wx: wx,
+	return &Server{cfg: cfg, store: st, log: log, webFS: webFS, started: time.Now(), oidc: &oidcProvider{}, wx: wx, http: &http.Client{Timeout: 3 * time.Minute},
 		core:     core.New(cfg.CoreURL, core.Options{DB: st.DB, TokenFile: cfg.DataDir + "/core.token", UserAgent: cfg.UserAgent}),
 		resolved: map[string]resolvedURL{}}
 }
@@ -97,6 +104,7 @@ func (s *Server) Bootstrap(ctx context.Context) error {
 	}
 	_ = s.store.PurgeSessions(ctx)
 	go s.janitor(ctx)
+	go s.fetchLightMap(ctx)
 	if s.core.Configured() {
 		go s.coreLoop(ctx)
 	}

@@ -7,7 +7,7 @@ export type AppSlug = 'calendar' | 'weather' | 'places' | 'notes'
 
 type ConnFields = { [K in AppSlug as `${K}_mode`]: ConnMode } & { [K in AppSlug as `${K}_via`]: ConnVia } & { [K in AppSlug as `${K}_detail` | `${K}_url` | `${K}_token` | `${K}_public_url` | `${K}_open_url`]: string } & { [K in AppSlug as `${K}_configured`]: boolean }
 
-export type EventKind = 'meteor_shower' | 'lunar_eclipse' | 'solar_eclipse' | 'conjunction' | 'opposition' | 'elongation' | 'moon_phase' | 'season'
+export type EventKind = 'meteor_shower' | 'lunar_eclipse' | 'solar_eclipse' | 'conjunction' | 'opposition' | 'elongation' | 'moon_phase' | 'season' | 'aurora'
 
 export type Settings = ConnFields & {
   core_configured: boolean
@@ -40,7 +40,7 @@ export interface Night {
   moon_rise: string | null; moon_set: string | null; moon_phase: number; moon_age: number; moon_up_dark: number; moon_dark_hrs: number
 }
 
-export interface NightHour { time: string; cloud: number | null; low: number | null; mid: number | null; high: number | null; humidity: number | null; temp: number | null; dew: number | null; wind: number | null; sun_alt: number; moon_alt: number; dark: boolean }
+export interface NightHour { seeing: number | null; transparency: number | null; time: string; cloud: number | null; low: number | null; mid: number | null; high: number | null; humidity: number | null; temp: number | null; dew: number | null; wind: number | null; sun_alt: number; moon_alt: number; dark: boolean }
 
 export interface MoonView { phase: number; phase_name: string; age: number; waxing: boolean; rise: string | null; set: string | null; up_dark: number; con: string; dist_km: number; words: string; next_new: string | null; next_full: string | null }
 
@@ -56,7 +56,13 @@ export interface SkyEvent {
 export interface Tonight {
   place: PlaceRef; date: string; night: Night; score: Score; moon: MoonView; planets: PlanetView[]; sights: SightView[]
   hours: NightHour[]; events: SkyEvent[]; stale: boolean; forecast_at: string
+  air: { seeing: number; transparency: number; words: string } | null
+  aurora: { kp_max: number; kp_needed: number; chance: number; likely: boolean; words: string; mag_lat: number } | null
+  darkness: Darkness | null
 }
+
+export interface Darkness { zone: string; rank: number; bortle: number; words: string }
+export interface DarkSpot { lat: number; lon: number; rank: number; zone: string; bortle: number; km: number; dir: number; dir_words: string; name: string; region: string; words: string }
 
 export interface NightSummary { date: string; score: Score; dark_from: string; dark_to: string; dark_kind: string; dark_hours: number; moon_phase: number; moon_name: string; moon_up_dark: number }
 

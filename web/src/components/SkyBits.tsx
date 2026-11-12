@@ -32,7 +32,7 @@ export function ScoreRing({ value, label, size = 76 }: { value: number; label: s
 }
 
 const ICON: Record<EventKind, string> = {
-  meteor_shower: 'sparkles', lunar_eclipse: 'moon', solar_eclipse: 'sun', conjunction: 'constellation', opposition: 'planet', elongation: 'planet', moon_phase: 'moon', season: 'sunrise',
+  meteor_shower: 'sparkles', lunar_eclipse: 'moon', solar_eclipse: 'sun', conjunction: 'constellation', opposition: 'planet', elongation: 'planet', moon_phase: 'moon', season: 'sunrise', aurora: 'waves',
 }
 
 export function EventIcon({ kind, sub }: { kind: EventKind; sub?: string }) {
@@ -41,5 +41,5 @@ export function EventIcon({ kind, sub }: { kind: EventKind; sub?: string }) {
 
 export const EVENT_LABEL: Record<EventKind, string> = {
   meteor_shower: 'Meteor showers', lunar_eclipse: 'Eclipses of the Moon', solar_eclipse: 'Eclipses of the Sun', conjunction: 'Close meetings',
-  opposition: 'Planets at their best', elongation: 'Mercury and Venus at their best', moon_phase: 'Moon phases', season: 'Equinoxes and solstices',
+  opposition: 'Planets at their best', elongation: 'Mercury and Venus at their best', moon_phase: 'Moon phases', season: 'Equinoxes and solstices', aurora: 'Northern lights',
 }

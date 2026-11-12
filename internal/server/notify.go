@@ -132,6 +132,26 @@ func (s *Server) evening(ctx context.Context, uid int64, st store.Settings, forc
 			}
 		}
 	}
+	// The northern (or southern) lights tonight at home, when a storm is forecast.
+	if home, err := s.store.HomeLocation(ctx, uid); err == nil && (oneOf("aurora", st.EventKinds) && st.NotifyEvents || force) {
+		wh := whereLoc(home)
+		if n, err := astro.NightAt(wh.Obs, nightDate(time.Now(), wh.TZ), wh.TZ); err == nil {
+			if a := s.auroraTonight(ctx, wh, n); a != nil && a.Likely {
+				key := "aurora:" + n.Date
+				fresh, _ := s.store.MarkSent(ctx, uid, key)
+				if fresh || force {
+					lines = append(lines, "✦ "+a.Words)
+					if title == "" {
+						title = "Northern lights possible tonight"
+					}
+					prio = "high"
+				}
+				if fresh {
+					s.publish(ctx, uid, "sky.event", key, map[string]any{"kind": "aurora", "title": "Aurora possible", "kp": a.KpMax, "kp_needed": a.KpNeeded, "place": home.Name})
+				}
+			}
+		}
+	}
 	if len(lines) == 0 {
 		return "", false
 	}
@@ -191,5 +211,3 @@ func (s *Server) handleCheckNow(w http.ResponseWriter, r *http.Request) {
 }
 
 const notifyTestBody = "Notifications work. Clear, dark nights at your places and the sky events you chose will arrive here in the evening."
-
-var _ = astro.Names

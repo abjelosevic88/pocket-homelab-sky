@@ -472,3 +472,8 @@ button.list-row:hover { background: var(--hover); }
 .sky-sheet .btn.primary { background: #4b59c6; border-color: transparent; }
 .lineup-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .lineup-list .btn { flex-direction: column; align-items: flex-start; height: auto; padding: 6px 10px; gap: 0; }
+.tn-air { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.tn-air-item { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); min-width: 0; }
+.tn-air-item b { font-size: 14.5px; }
+.tn-air-item.hot { background: color-mix(in srgb, #22c55e 14%, var(--surface-2)); }
+.km-pick { width: 150px; flex: 0 1 150px; }

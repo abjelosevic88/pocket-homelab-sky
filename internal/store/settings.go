@@ -22,11 +22,11 @@ func (s *Store) defaults() Settings {
 }
 
 // EventKinds are the sky events a person can be told about.
-var EventKinds = []string{"meteor_shower", "lunar_eclipse", "solar_eclipse", "conjunction", "opposition", "elongation", "moon_phase", "season"}
+var EventKinds = []string{"meteor_shower", "lunar_eclipse", "solar_eclipse", "conjunction", "opposition", "elongation", "moon_phase", "season", "aurora"}
 
 // DefaultEventKinds are the ones switched on at first.
 func DefaultEventKinds() []string {
-	return []string{"meteor_shower", "lunar_eclipse", "solar_eclipse", "conjunction", "opposition"}
+	return []string{"meteor_shower", "lunar_eclipse", "solar_eclipse", "conjunction", "opposition", "aurora"}
 }
 
 // Every setting is stored as its JSON value under its JSON name, so adding a

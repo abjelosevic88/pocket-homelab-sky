@@ -123,6 +123,12 @@ func (s *Server) handleCreateLocation(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if l.Bortle == 0 {
+		// a first guess from the light-pollution atlas; the person can change it
+		if d := s.darknessAt(l.Lat, l.Lon); d != nil {
+			l.Bortle = d.Bortle
+		}
+	}
 	if err := s.store.CreateLocation(ctx, l); err != nil {
 		s.fail(w, err, "add place")
 		return

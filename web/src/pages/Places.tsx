@@ -7,7 +7,7 @@ import { api, V1 } from '../lib/api'
 import { useApp } from '../lib/app-context'
 import { announceChange, useData } from '../lib/data'
 import { choosePlace } from '../lib/place'
-import type { Place } from '../lib/types'
+import type { DarkSpot, Darkness, Place } from '../lib/types'
 import { openAddPlace } from '../components/Layout'
 import { Icon } from '../components/icons'
 import { Select } from '../components/Select'
@@ -75,6 +75,7 @@ export default function PlacesPage() {
           </div>
         )}
       </Card>
+      {places.length > 0 && <DarkerNearby />}
       <Card title="From your other apps" sub="Take over places you already keep elsewhere: only their names and where they are.">
         <div className="row wrap" style={{ gap: 8 }}>
           {(['weather', 'places'] as const).map(slug => (
@@ -101,6 +102,7 @@ function EditPlace({ p, onClose, onSave }: { p: Place; onClose: () => void; onSa
         <Field label="Name"><input value={f.name} onChange={e => setF({ ...f, name: e.target.value })} required maxLength={80} autoFocus /></Field>
         <Field label="How dark is the sky there?" help="The Bortle scale: it decides which faint sights Tonight suggests. Not sure? A town is about 7, a village 4 or 5, the mountains 2 or 3.">
           <Select value={String(f.bortle)} onChange={v => setF({ ...f, bortle: Number(v) })} options={BORTLE} ariaLabel="Darkness of the sky" />
+          <AtlasHint place={p} onUse={b => setF({ ...f, bortle: b })} />
         </Field>
         <Field label="Note" help="For you: “trees to the east”, “park by the lake”."><input value={f.note} onChange={e => setF({ ...f, note: e.target.value })} maxLength={500} /></Field>
         <label className="row" style={{ gap: 8 }}><Switch checked={f.is_home} onChange={v => setF({ ...f, is_home: v })} label="Home" disabled={p.is_home} />This is home</label>
@@ -146,5 +148,62 @@ function ImportPlaces({ from, onClose }: { from: 'weather' | 'places'; onClose: 
         </div>
       )}
     </Modal>
+  )
+}
+
+function AtlasHint({ place, onUse }: { place: Place; onUse: (bortle: number) => void }) {
+  const [d, setD] = useState<Darkness | null>(null)
+  useEffect(() => { api.get<{ available: boolean; here: Darkness | null }>(`${V1}/darkness?location=${place.id}`).then(r => setD(r.here)).catch(() => {}) }, [place.id])
+  if (!d) return null
+  return (
+    <p className="small muted mt-s row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <span>The light-pollution atlas says zone {d.zone}: {d.words} (about {d.bortle}).</span>
+      {place.bortle !== d.bortle && <button type="button" className="link-btn" onClick={() => onUse(d.bortle)}>Use {d.bortle}</button>}
+    </p>
+  )
+}
+
+/** The darkest skies within a drive of one of your places, from the light-pollution atlas. */
+function DarkerNearby() {
+  const { overview } = useData()
+  const { toast } = useToast()
+  const places = overview?.places || []
+  const [from, setFrom] = useState(() => String(places.find(p => p.is_home)?.id || places[0]?.id || ''))
+  const [km, setKm] = useState(50)
+  const [res, setRes] = useState<{ available: boolean; detail?: string; here?: Darkness | null; spots?: DarkSpot[] } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const look = async () => {
+    setBusy(true)
+    try { setRes(await api.get(`${V1}/darkness?location=${from}&near=${km}`)) } catch (e) { toast((e as Error).message, 'err') } finally { setBusy(false) }
+  }
+  const add = async (sp: DarkSpot) => {
+    try {
+      await api.post(`${V1}/locations`, { name: sp.name ? `Dark sky near ${sp.name}` : `Dark sky ${Math.round(sp.km)} km ${sp.dir_words}`, region: sp.region, lat: sp.lat, lon: sp.lon, bortle: sp.bortle, note: `Light-pollution zone ${sp.zone}` })
+      toast('Added to your places', 'ok'); announceChange()
+    } catch (e) { toast((e as Error).message, 'err') }
+  }
+  return (
+    <Card title="Darker skies nearby" sub="The darkest places within a drive, from the World Atlas of the Artificial Night Sky Brightness (D. Lorenz, 2025 satellite data). Check that there is a road and a safe place to stop.">
+      <div className="row wrap" style={{ gap: 8 }}>
+        <Select className="place-picker" value={from} onChange={setFrom} options={places.map(p => ({ value: String(p.id), label: `From ${p.name}` }))} ariaLabel="From" />
+        <Select className="km-pick" value={String(km)} onChange={v => setKm(Number(v))} options={[25, 50, 80, 120].map(k => ({ value: String(k), label: `Within ${k} km` }))} ariaLabel="Distance" />
+        <button type="button" className="btn" onClick={look} disabled={busy || !from}>{busy ? <Spinner /> : <Icon name="search" size={15} />}Find dark skies</button>
+      </div>
+      {res && !res.available && <p className="muted small mt">{res.detail}. It downloads by itself in the first minutes after the app starts.</p>}
+      {res?.here && <p className="small mt">Here: zone {res.here.zone}, {res.here.words} (about Bortle {res.here.bortle}).</p>}
+      {res?.spots && (
+        <div className="list bordered mt">
+          {res.spots.length === 0 && <p className="muted small pad">Nothing darker within {km} km.</p>}
+          {res.spots.map(sp => (
+            <div key={`${sp.lat},${sp.lon}`} className="list-row">
+              <span className="row-main grow"><span className="row-title">{sp.name ? `Near ${sp.name}` : 'Unnamed spot'} <span className="badge">zone {sp.zone}</span></span>
+                <span className="row-sub small muted">{sp.km} km {sp.dir_words} · {sp.words} · about Bortle {sp.bortle}</span></span>
+              <a className="btn ghost sm" href={`https://www.openstreetmap.org/?mlat=${sp.lat}&mlon=${sp.lon}#map=12/${sp.lat}/${sp.lon}`} target="_blank" rel="noreferrer">Map</a>
+              <button type="button" className="btn sm" onClick={() => add(sp)}><Icon name="plus" size={14} />Add</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   )
 }

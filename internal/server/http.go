@@ -57,6 +57,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/tonight", s.handleTonight)
 			r.Get("/nights", s.handleNights)
 			r.Get("/bodies", s.handleBodies)
+			r.Get("/darkness", s.handleDarkness)
 			r.Get("/events", s.handleEvents)
 			r.Post("/calendar", s.handleAddToCalendar)
 			r.Get("/catalog", s.handleCatalog)

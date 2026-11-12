@@ -54,6 +54,7 @@ export default function Tonight() {
         <Hero v={data} tz={tz} />
         <NightChart hours={data.hours} tz={tz} />
         <Nights q={q} tz={tz} current={data.date} onPick={d => setDate(d === today ? '' : d)} />
+        <AirCard v={data} />
         <Plan q={q} date={data.date} />
         <div className="grid-2">
           <Planets list={data.planets} tz={tz} />
@@ -275,6 +276,26 @@ function Coming({ events, tz }: { events: SkyEvent[]; tz?: string }) {
           </Link>
         ))}
       </div>
+    </Card>
+  )
+}
+
+const FIVE = ['', 'poor', 'fair', 'average', 'good', 'excellent']
+
+/** Steady and clear air, the northern lights and how dark the place is. */
+function AirCard({ v }: { v: TonightView }) {
+  if (!v.air && !v.aurora && !v.darkness) return null
+  return (
+    <Card title="The air, the lights and the dark">
+      <div className="tn-air">
+        {v.air && <>
+          <div className="tn-air-item"><span className="muted small">Steady air (seeing)</span><b>{v.air.seeing}/5 · {FIVE[v.air.seeing]}</b><span className="muted small">Sharp planets, the Moon and close double stars need steady air.</span></div>
+          <div className="tn-air-item"><span className="muted small">Clear air (transparency)</span><b>{v.air.transparency}/5 · {FIVE[v.air.transparency]}</b><span className="muted small">Faint galaxies and the Milky Way need clear air.</span></div>
+        </>}
+        {v.darkness && <div className="tn-air-item"><span className="muted small">Light pollution here</span><b>Zone {v.darkness.zone} · about Bortle {v.darkness.bortle}</b><span className="muted small">{v.darkness.words[0].toUpperCase() + v.darkness.words.slice(1)}.</span></div>}
+        {v.aurora && <div className={`tn-air-item ${v.aurora.likely ? 'hot' : ''}`}><span className="muted small">Northern lights</span><b>{v.aurora.likely ? 'Possible tonight' : 'Not tonight'} · Kp {v.aurora.kp_max.toFixed(0)}</b><span className="muted small">{v.aurora.words}</span></div>}
+      </div>
+      <p className="muted small mt">Seeing and transparency by 7Timer!; space weather by NOAA; light pollution from the World Atlas by D. Lorenz.</p>
     </Card>
   )
 }
