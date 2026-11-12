@@ -1,0 +1,23 @@
+[Unit]
+Description=Pocket Sky — your night sky
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pocket-sky
+Group=pocket-sky
+ExecStart=/usr/local/bin/pocket-sky
+Environment=DATA_DIR=/var/lib/pocket-sky
+Environment=PORT=8080
+Environment=BASE_URL=https://sky.example.com
+Environment=SECURE_COOKIES=true
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pocket-sky
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

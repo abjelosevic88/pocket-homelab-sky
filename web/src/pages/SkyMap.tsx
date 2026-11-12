@@ -1,0 +1,493 @@
+// The sky map: drag to look around, pinch or scroll to zoom, tap anything
+// to see what it is. "Point at the sky" follows the phone's compass and tilt,
+// with the camera picture behind the stars if you like. Time can be moved
+// to any hour of any night.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { api, V1 } from '../lib/api'
+import { useApp } from '../lib/app-context'
+import { type BodyKey, BODIES, NAMES, altAz, at, dirShort, direction } from '../lib/astro'
+import { fmtAt, fmtDate, fmtDayAt } from '../lib/format'
+import { Pointer, askSensors, openCamera, sensorsAvailable } from '../lib/orientation'
+import { placeQuery, usePlace } from '../lib/place'
+import { type Catalog, type Layers, type Painted, directionOf, draw, frameOf, hitTest, loadCatalog, starLabel } from '../lib/sky'
+import type { ObjectDetail, Settings, SkyObject } from '../lib/types'
+import { Icon } from '../components/icons'
+import { PlacePicker } from '../components/PlacePicker'
+import { useCrumb } from '../components/Layout'
+import { MenuButton, type MenuItem, Spinner, useDebounce, useToast } from '../components/ui'
+
+type Mode = 'map' | 'point'
+const VIEW_KEY = 'psky-view'
+
+function readView() {
+  try { const v = JSON.parse(localStorage.getItem(VIEW_KEY) || ''); if (typeof v.az === 'number') return v as { az: number; alt: number; fov: number } } catch { /* first time */ }
+  return { az: 180, alt: 35, fov: 90 }
+}
+
+export default function SkyMap() {
+  useCrumb(undefined)
+  const { settings, setSettings } = useApp()
+  const { place, loaded, locate } = usePlace()
+  const { toast } = useToast()
+  const navigate = useNavigate()
+  const [sp, setSp] = useSearchParams()
+  const [cat, setCat] = useState<Catalog | null>(null)
+  const [catErr, setCatErr] = useState('')
+  useEffect(() => { loadCatalog().then(setCat).catch(e => setCatErr((e as Error).message)) }, [])
+
+  // ---- time ----
+  const [live, setLive] = useState(true)
+  const [t, setT] = useState(() => Date.now())
+  useEffect(() => {
+    if (!live) return
+    const id = window.setInterval(() => setT(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [live])
+  const [timeOpen, setTimeOpen] = useState(false)
+  const [base, setBase] = useState(() => Date.now())
+
+  // ---- the view ----
+  const view = useRef(readView())
+  const [mode, setMode] = useState<Mode>('map')
+  const [camOn, setCamOn] = useState(false)
+  const frame = useRef<{ f: [number, number, number]; u: [number, number, number]; r: [number, number, number] } | null>(null)
+  const pointer = useRef<Pointer | null>(null)
+  const [noSensor, setNoSensor] = useState(false)
+  const [selected, setSelected] = useState<string>('')
+  const [selName, setSelName] = useState('')
+  const [aim, setAim] = useState<{ alt: number; az: number; name: string; key: string } | null>(null)
+  const painted = useRef<Painted | null>(null)
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const wrap = useRef<HTMLDivElement>(null)
+  const video = useRef<HTMLVideoElement>(null)
+  const stream = useRef<MediaStream | null>(null)
+  const size = useRef({ w: 0, h: 0, dpr: 1 })
+  const raf = useRef(0)
+  const anim = useRef<{ from: { az: number; alt: number }; to: { az: number; alt: number }; t0: number } | null>(null)
+
+  const layers: Layers = useMemo(() => ({
+    lines: settings?.show_lines ?? true, conNames: settings?.show_con_names ?? true, starNames: settings?.show_star_names ?? true, dso: settings?.show_dso ?? true,
+    milkyWay: settings?.show_milky_way ?? true, grid: settings?.show_grid ?? false, equator: settings?.show_equator ?? false, ecliptic: settings?.show_ecliptic ?? true,
+  }), [settings])
+  const night = settings?.night_red ?? false
+  const camFov = settings?.camera_fov ?? 64
+
+  const obs = useMemo(() => (place ? { lat: place.lat, lon: place.lon } : null), [place])
+  const stateRef = useRef({ t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov })
+  stateRef.current = { t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov }
+
+  const paint = useCallback(() => {
+    raf.current = 0
+    const c = canvas.current
+    const st = stateRef.current
+    if (!c || !st.obs) return
+    const ctx = c.getContext('2d')
+    if (!ctx) return
+    const { w, h, dpr } = size.current
+    if (!w || !h) return
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    // a running "go to" glide
+    if (anim.current) {
+      const a = anim.current
+      const k = Math.min(1, (performance.now() - a.t0) / 650)
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2
+      const daz = ((a.to.az - a.from.az + 540) % 360) - 180
+      view.current.az = (a.from.az + daz * e + 360) % 360
+      view.current.alt = a.from.alt + (a.to.alt - a.from.alt) * e
+      if (k >= 1) anim.current = null
+      else raf.current = requestAnimationFrame(paint)
+    }
+    const pointing = st.mode === 'point' && frame.current
+    const fr = pointing ? frame.current! : frameOf(view.current.alt, view.current.az)
+    const camera = st.mode === 'point' && st.camOn
+    const p = draw(ctx, w, h, cat, {
+      t: st.t, obs: st.obs, ...fr, fov: camera ? st.camFov : view.current.fov, proj: camera ? 'gnomonic' : 'stereo', fovLong: camera,
+      camera, layers: st.layers, magLimit: st.magLimit, selected: st.selected || undefined,
+    })
+    painted.current = p
+    if (st.mode === 'point') {
+      const [alt, az] = altAz(fr.f)
+      const hit = hitTest({ ...p, hits: p.hits }, w / 2, h / 2, null)
+      const close = hit && Math.hypot(hit.x - w / 2, hit.y - h / 2) < 46 ? hit : null
+      setAim(prev => {
+        const next = { alt: Math.round(alt), az: Math.round(az) % 360, name: close?.name || '', key: close?.key || '' }
+        return prev && prev.alt === next.alt && prev.az === next.az && prev.key === next.key ? prev : next
+      })
+    }
+  }, [cat])
+
+  const schedule = useCallback(() => { if (!raf.current) raf.current = requestAnimationFrame(paint) }, [paint])
+  useEffect(() => { schedule() }, [schedule, t, obs, layers, mode, camOn, selected, cat, settings?.mag_limit, camFov])
+
+  // canvas size
+  useEffect(() => {
+    const el = wrap.current, c = canvas.current
+    if (!el || !c) return
+    const fit = () => {
+      const r = el.getBoundingClientRect()
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5)
+      size.current = { w: r.width, h: r.height, dpr }
+      c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr)
+      c.style.width = r.width + 'px'; c.style.height = r.height + 'px'
+      schedule()
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [schedule, mode])
+
+  const keepView = () => localStorage.setItem(VIEW_KEY, JSON.stringify(view.current))
+
+  // ---- going to an object ----
+  const goTo = useCallback((key: string, glide = true) => {
+    const st = stateRef.current
+    if (!st.obs) return
+    const d = directionOf(cat, key, st.obs, st.t)
+    if (!d) return
+    if (stateRef.current.mode === 'point') return
+    const to = { az: d.az, alt: Math.max(-20, Math.min(85, d.alt)) }
+    if (glide) anim.current = { from: { az: view.current.az, alt: view.current.alt }, to, t0: performance.now() }
+    else { view.current.az = to.az; view.current.alt = to.alt }
+    if (view.current.fov > 100) view.current.fov = 80
+    keepView(); schedule()
+  }, [cat, schedule])
+
+  // ?object=dso:M31 opens it
+  useEffect(() => {
+    const k = sp.get('object')
+    if (!k || !cat || !obs) return
+    setSelected(k); goTo(k, false)
+    const next = new URLSearchParams(sp); next.delete('object'); setSp(next, { replace: true })
+  }, [sp, cat, obs, goTo, setSp])
+
+  // ---- gestures ----
+  const pts = useRef(new Map<number, { x: number; y: number }>())
+  const gesture = useRef<{ x: number; y: number; t: number; moved: boolean; dist?: number; fov?: number; az: number; alt: number; off: number } | null>(null)
+  const onDown = (e: React.PointerEvent) => {
+    (e.target as HTMLElement).setPointerCapture(e.pointerId)
+    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    anim.current = null
+    const ps = [...pts.current.values()]
+    const g = { x: e.clientX, y: e.clientY, t: performance.now(), moved: false, az: view.current.az, alt: view.current.alt, off: pointer.current?.offset || 0 } as NonNullable<typeof gesture.current>
+    if (ps.length === 2) { g.dist = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y); g.fov = stateRef.current.mode === 'point' && stateRef.current.camOn ? stateRef.current.camFov : view.current.fov; g.moved = true }
+    gesture.current = g
+  }
+  const camFovLive = useRef<number | null>(null)
+  const onMove = (e: React.PointerEvent) => {
+    if (!pts.current.has(e.pointerId)) return
+    pts.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const g = gesture.current
+    if (!g) return
+    const ps = [...pts.current.values()]
+    const { h } = size.current
+    if (ps.length === 2 && g.dist && g.fov) {
+      const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y)
+      const nf = Math.max(8, Math.min(140, g.fov * g.dist / Math.max(20, d)))
+      if (stateRef.current.mode === 'point' && stateRef.current.camOn) { camFovLive.current = Math.max(20, Math.min(110, nf)); stateRef.current.camFov = camFovLive.current }
+      else view.current.fov = nf
+      schedule(); return
+    }
+    const dx = e.clientX - g.x, dy = e.clientY - g.y
+    if (Math.hypot(dx, dy) > 6) g.moved = true
+    if (!g.moved) return
+    const degPx = view.current.fov / Math.max(200, h)
+    if (stateRef.current.mode === 'point') {
+      if (pointer.current) pointer.current.offset = g.off - dx * degPx * 0.8
+    } else {
+      view.current.az = (g.az - dx * degPx * 1.1 + 720) % 360
+      view.current.alt = Math.max(-89, Math.min(89.9, g.alt + dy * degPx * 1.1))
+    }
+    schedule()
+  }
+  const onUp = (e: React.PointerEvent) => {
+    const g = gesture.current
+    pts.current.delete(e.pointerId)
+    if (pts.current.size > 0) { gesture.current = { ...g!, x: [...pts.current.values()][0].x, y: [...pts.current.values()][0].y, dist: undefined, az: view.current.az, alt: view.current.alt, off: pointer.current?.offset || 0 }; return }
+    gesture.current = null
+    if (camFovLive.current != null) { saveSetting({ camera_fov: Math.round(camFovLive.current) }); camFovLive.current = null }
+    keepView()
+    if (g && !g.moved && performance.now() - g.t < 500 && painted.current) {
+      const r = canvas.current!.getBoundingClientRect()
+      const hit = hitTest(painted.current, e.clientX - r.left, e.clientY - r.top, cat)
+      if (hit) { setSelected(hit.key); setSelName(hit.name) } else setSelected('')
+    }
+  }
+  const onWheel = (e: React.WheelEvent) => {
+    view.current.fov = Math.max(8, Math.min(140, view.current.fov * Math.exp(e.deltaY * 0.0012)))
+    keepView(); schedule()
+  }
+  useEffect(() => {
+    const el = canvas.current
+    if (!el) return
+    const prevent = (e: WheelEvent) => e.preventDefault()
+    el.addEventListener('wheel', prevent, { passive: false })
+    return () => el.removeEventListener('wheel', prevent)
+  }, [mode])
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return
+      const step = view.current.fov / 12
+      let used = true
+      switch (e.key) {
+        case 'ArrowLeft': view.current.az = (view.current.az - step + 360) % 360; break
+        case 'ArrowRight': view.current.az = (view.current.az + step) % 360; break
+        case 'ArrowUp': view.current.alt = Math.min(89.9, view.current.alt + step); break
+        case 'ArrowDown': view.current.alt = Math.max(-89, view.current.alt - step); break
+        case '+': case '=': view.current.fov = Math.max(8, view.current.fov / 1.2); break
+        case '-': view.current.fov = Math.min(140, view.current.fov * 1.2); break
+        case 'Escape': setSelected(''); break
+        default: used = false
+      }
+      if (used) { e.preventDefault(); keepView(); schedule() }
+    }
+    window.addEventListener('keydown', k)
+    return () => window.removeEventListener('keydown', k)
+  }, [schedule])
+
+  // ---- pointing the phone ----
+  const stopPointing = useCallback(() => {
+    pointer.current?.stop(); pointer.current = null; frame.current = null
+    stream.current?.getTracks().forEach(tr => tr.stop()); stream.current = null
+    setCamOn(false); setMode('map'); setNoSensor(false)
+  }, [])
+  useEffect(() => () => { pointer.current?.stop(); stream.current?.getTracks().forEach(tr => tr.stop()) }, [])
+  const startCamera = async () => {
+    try {
+      const s = await openCamera()
+      stream.current = s
+      setCamOn(true)
+      requestAnimationFrame(() => { if (video.current) { video.current.srcObject = s; video.current.play().catch(() => {}) } })
+    } catch (e) {
+      toast((e as Error).name === 'NotAllowedError' ? 'The camera is not allowed for this site. You can still point the phone without it.' : (e as Error).message, 'err')
+    }
+  }
+  const stopCamera = () => { stream.current?.getTracks().forEach(tr => tr.stop()); stream.current = null; setCamOn(false) }
+  const startPointing = async (withCamera: boolean) => {
+    if (!sensorsAvailable()) { toast('This device has no compass or tilt sensor. Drag the map instead.', 'err'); return }
+    const ok = await askSensors()
+    if (!ok) { toast('Motion and orientation are not allowed for this site.', 'err'); return }
+    setSelected('')
+    const p = new Pointer(fr => { frame.current = fr; schedule() })
+    pointer.current = p
+    p.start()
+    setMode('point')
+    setNoSensor(false)
+    window.setTimeout(() => { if (pointer.current === p && !p.heard) setNoSensor(true) }, 2500)
+    if (withCamera) await startCamera()
+  }
+
+  // ---- settings from the map ----
+  const saveSetting = useCallback((patch: Partial<Settings>) => {
+    if (settings) setSettings({ ...settings, ...patch } as Settings)
+    api.put<Settings>(`${V1}/settings`, patch).then(s => setSettings(s)).catch(() => {})
+  }, [settings, setSettings])
+  const layerItems = (): MenuItem[] => [
+    { heading: 'Show on the map' },
+    { label: 'Constellation lines', checked: layers.lines, onSelect: () => saveSetting({ show_lines: !layers.lines }) },
+    { label: 'Constellation names', checked: layers.conNames, onSelect: () => saveSetting({ show_con_names: !layers.conNames }) },
+    { label: 'Star names', checked: layers.starNames, onSelect: () => saveSetting({ show_star_names: !layers.starNames }) },
+    { label: 'Clusters, nebulae, galaxies', checked: layers.dso, onSelect: () => saveSetting({ show_dso: !layers.dso }) },
+    { label: 'Milky Way', checked: layers.milkyWay, onSelect: () => saveSetting({ show_milky_way: !layers.milkyWay }) },
+    { label: "The Sun's path", checked: layers.ecliptic, onSelect: () => saveSetting({ show_ecliptic: !layers.ecliptic }) },
+    { label: 'Height and direction grid', checked: layers.grid, onSelect: () => saveSetting({ show_grid: !layers.grid }) },
+    { label: 'Sky equator grid', checked: layers.equator, onSelect: () => saveSetting({ show_equator: !layers.equator }) },
+    'sep',
+    { heading: 'Stars' },
+    ...[4, 5, 5.5, 6, 6.5].map(m => ({ label: m <= 4 ? 'Bright stars only' : m === 6.5 ? 'All the stars (dark sky)' : `Down to magnitude ${m}`, checked: Math.abs((settings?.mag_limit ?? 5.5) - m) < 0.01, onSelect: () => saveSetting({ mag_limit: m }) })),
+  ]
+
+  // ---- search ----
+  const [q, setQ] = useState('')
+  const dq = useDebounce(q.trim(), 200)
+  const [results, setResults] = useState<SkyObject[] | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  useEffect(() => {
+    if (dq.length < 1) { setResults(null); return }
+    let alive = true
+    api.get<SkyObject[]>(`${V1}/objects/search?q=${encodeURIComponent(dq)}&limit=12`).then(r => { if (alive) setResults(r) }).catch(() => {})
+    return () => { alive = false }
+  }, [dq])
+  const pick = (o: SkyObject) => { setSearchOpen(false); setQ(''); setSelected(o.key); setSelName(o.name); goTo(o.key) }
+
+  const timeLabel = live ? `Now · ${fmtAt(t, place?.timezone)}` : `${fmtDayAt(t, place?.timezone)} ${fmtAt(t, place?.timezone)}`
+  const setTime = (ms: number) => { setLive(false); setT(ms) }
+
+  if (loaded && !place) {
+    return (
+      <div className="sky-empty">
+        <Icon name="map" size={28} />
+        <h2>Where do you watch the sky from?</h2>
+        <p className="muted">The map needs a place: add one, or use where you are now.</p>
+        <div className="row" style={{ gap: 8, justifyContent: 'center' }}>
+          <button type="button" className="btn primary" onClick={() => locate()}><Icon name="locate" size={15} />Use where I am</button>
+          <PlacePicker />
+        </div>
+      </div>
+    )
+  }
+
+  const pointing = mode === 'point'
+  return (
+    <div className={`sky-page ${pointing ? 'sky-point' : ''} ${night ? 'night-red' : ''}`}>
+      <div className="sky-stage" ref={wrap}>
+        {pointing && camOn && <video ref={video} className="sky-video" playsInline muted autoPlay />}
+        <canvas ref={canvas} className="sky-canvas" onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onWheel={onWheel}
+          aria-label="Star map. Drag to look around, pinch or scroll to zoom, tap a star or planet to see what it is." role="img" />
+        {!cat && !catErr && <div className="sky-loading"><Spinner /> Loading the stars…</div>}
+        {catErr && <div className="sky-loading bad">{catErr}</div>}
+
+        {/* top bar */}
+        <div className="sky-bar top">
+          {pointing ? (
+            <button type="button" className="sky-btn" onClick={stopPointing} aria-label="Back to the map"><Icon name="x" size={18} /><span className="hide-sm">Back to the map</span></button>
+          ) : (
+            <div className="sky-search">
+              <Icon name="search" size={16} />
+              <input value={q} onChange={e => { setQ(e.target.value); setSearchOpen(true) }} onFocus={() => setSearchOpen(true)} placeholder="Find a star, planet, galaxy…" aria-label="Find in the sky" />
+              {searchOpen && results && (
+                <div className="sky-results">
+                  {results.length === 0 && <div className="muted small" style={{ padding: 10 }}>Nothing called “{dq}”.</div>}
+                  {results.map(o => (
+                    <button key={o.key} type="button" className="sky-result" onMouseDown={e => e.preventDefault()} onClick={() => pick(o)}>
+                      <span className="grow ellipsis">{o.name}</span><span className="muted small">{o.type}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <span className="spacer" />
+          {!pointing && <PlacePicker className="sky-pick hide-sm" />}
+          <MenuButton label="What to show" className="sky-btn icon" align="right" width={260} items={layerItems}><Icon name="layers" size={18} /></MenuButton>
+          <button type="button" className={`sky-btn icon ${night ? 'on' : ''}`} onClick={() => saveSetting({ night_red: !night })} aria-pressed={night} title="Red light, to keep your eyes used to the dark"><Icon name="eye" size={18} /></button>
+          {pointing && <button type="button" className={`sky-btn ${camOn ? 'on' : ''}`} onClick={() => (camOn ? stopCamera() : startCamera())} aria-pressed={camOn}><Icon name="camera" size={18} /><span className="hide-sm">{camOn ? 'Camera on' : 'Camera off'}</span></button>}
+        </div>
+
+        {/* point mode readout */}
+        {pointing && (
+          <div className="sky-aim">
+            <Icon name="crosshair" size={44} strokeWidth={1.2} className="sky-cross" />
+            {aim && <div className="sky-aim-text">
+              {aim.name ? <button type="button" className="sky-btn" onClick={() => { setSelected(aim.key); setSelName(aim.name) }}><b>{aim.name}</b></button> : null}
+              <span className="sky-aim-dir">{aim.alt}° up · {dirShort(aim.az)} {aim.az}°</span>
+            </div>}
+            {noSensor && <div className="sky-hint">No compass readings yet. Move the phone in a figure of eight; if nothing happens, this device has no compass.</div>}
+            <div className="sky-hint soft">Off a little? Drag sideways to line the stars up.{camOn ? ' Pinch to match the camera.' : ''}</div>
+          </div>
+        )}
+
+        {/* bottom bar */}
+        <div className="sky-bar bottom">
+          <button type="button" className={`sky-btn ${timeOpen ? 'on' : ''}`} onClick={() => { setBase(live ? Date.now() : t); setTimeOpen(o => !o) }} aria-expanded={timeOpen}><Icon name="clock" size={16} />{timeLabel}</button>
+          {!live && <button type="button" className="sky-btn" onClick={() => { setLive(true); setT(Date.now()) }}>Now</button>}
+          <span className="spacer" />
+          {!pointing && <>
+            <button type="button" className="sky-btn icon" onClick={() => { view.current.fov = Math.max(8, view.current.fov / 1.4); keepView(); schedule() }} aria-label="Zoom in"><Icon name="plus" size={18} /></button>
+            <button type="button" className="sky-btn icon" onClick={() => { view.current.fov = Math.min(140, view.current.fov * 1.4); keepView(); schedule() }} aria-label="Zoom out"><Icon name="minus" size={18} /></button>
+            <button type="button" className="sky-btn primary" onClick={() => startPointing(true)} title="Hold your phone up to the sky"><Icon name="compass" size={16} />Point at the sky</button>
+          </>}
+        </div>
+        {timeOpen && (
+          <div className="sky-time">
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" className="btn sm" onClick={() => setTime(t - 86400000)}><Icon name="chevron-left" size={14} />Day</button>
+              <button type="button" className="btn sm" onClick={() => setTime(t - 3600000)}>−1 h</button>
+              <input type="date" className="input sm" value={new Date(t).toISOString().slice(0, 10)} onChange={e => { const d = new Date(e.target.value + 'T' + new Date(t).toISOString().slice(11)); if (!Number.isNaN(d.getTime())) { setBase(d.getTime()); setTime(d.getTime()) } }} aria-label="Date" />
+              <button type="button" className="btn sm" onClick={() => setTime(t + 3600000)}>+1 h</button>
+              <button type="button" className="btn sm" onClick={() => setTime(t + 86400000)}>Day<Icon name="chevron-right" size={14} /></button>
+              <span className="spacer" />
+              <button type="button" className="btn sm ghost" onClick={() => { setLive(true); setT(Date.now()); setTimeOpen(false) }}>Back to now</button>
+            </div>
+            <input type="range" className="sky-slider" min={-12 * 60} max={12 * 60} step={5} value={Math.round((t - base) / 60000)} onChange={e => setTime(base + Number(e.target.value) * 60000)} aria-label="Move the time" />
+            <div className="row muted small" style={{ justifyContent: 'space-between' }}><span>−12 h</span><span>{fmtDayAt(t, place?.timezone)} {fmtAt(t, place?.timezone)}</span><span>+12 h</span></div>
+          </div>
+        )}
+        {selected && obs && <InfoSheet k={selected} name={selName} t={t} placeQ={placeQuery(place)} cat={cat} obs={obs} tz={place?.timezone}
+          onClose={() => setSelected('')} onCenter={() => goTo(selected)} pointing={pointing} onLog={() => navigate(`/log?add=${encodeURIComponent(selected)}`)} />}
+      </div>
+    </div>
+  )
+}
+
+// ---- what you tapped ----
+
+function InfoSheet({ k, name, t, placeQ, cat, obs, tz, onClose, onCenter, pointing, onLog }: {
+  k: string; name: string; t: number; placeQ: string; cat: Catalog | null; obs: { lat: number; lon: number }; tz?: string
+  onClose: () => void; onCenter: () => void; pointing: boolean; onLog: () => void
+}) {
+  const { toast } = useToast()
+  const [d, setD] = useState<ObjectDetail | null>(null)
+  const [err, setErr] = useState('')
+  const [ai, setAi] = useState<{ busy: boolean; text: string }>({ busy: false, text: '' })
+  const tq = Math.floor(t / 60000) // refetch at most a minute apart
+  useEffect(() => {
+    let alive = true
+    setErr('')
+    api.get<ObjectDetail>(`${V1}/objects/${encodeURIComponent(k)}?${placeQ}&t=${tq * 60000}`).then(r => { if (alive) setD(r) }).catch(e => { if (alive) setErr((e as Error).message) })
+    return () => { alive = false }
+  }, [k, placeQ, tq])
+  useEffect(() => { setAi({ busy: false, text: '' }); setD(null) }, [k])
+  // the position now, from the browser engine (follows the time slider live)
+  const live = useMemo(() => {
+    if ((BODIES as string[]).includes(k)) { const s = at(k as BodyKey, obs, t); return { alt: s.alt, az: s.az, mag: s.mag, phase: s.phase } }
+    const dd = directionOf(cat, k, obs, t)
+    return dd ? { ...dd, mag: undefined as number | undefined, phase: undefined as number | undefined } : null
+  }, [k, obs, t, cat])
+  const star = k.startsWith('star:') && cat ? cat.stars[cat.named.get(Number(k.slice(5))) ?? -1] : undefined
+  const title = d?.name || (star ? starLabel(cat!, star) : '') || name || (NAMES as Record<string, string>)[k] || k
+  const toggleTarget = async () => {
+    if (!d) return
+    try {
+      if (d.target_id) { await api.del(`${V1}/targets/${d.target_id}`); setD({ ...d, target_id: 0 }); toast('Taken off your list') }
+      else { const r = await api.post<{ id: number }>(`${V1}/targets`, { key: k }); setD({ ...d, target_id: r.id }); toast('On your want-to-see list', 'ok') }
+    } catch (e) { toast((e as Error).message, 'err') }
+  }
+  const explain = async () => {
+    setAi({ busy: true, text: '' })
+    try {
+      const r = await api.post<{ ok: boolean; text?: string; error?: string }>(`${V1}/ai/explain`, { key: k })
+      setAi({ busy: false, text: r.ok ? r.text || '' : r.error || 'Pocket AI did not answer' })
+    } catch (e) { setAi({ busy: false, text: (e as Error).message }) }
+  }
+  const up = live ? live.alt > 0 : d?.up
+  return (
+    <div className="sky-sheet" role="dialog" aria-label={title}>
+      <div className="sky-sheet-head">
+        <div className="grow">
+          <div className="sky-sheet-title">{title}</div>
+          <div className="muted small">{[d?.type, d?.con_name ? `in ${d.con_name}` : '', d?.alt_name].filter(Boolean).join(' · ')}</div>
+        </div>
+        <button type="button" className="btn ghost icon-only" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
+      </div>
+      {err && <p className="bad small">{err}</p>}
+      {live && <div className="sky-sheet-now">
+        <span className={`pill ${up ? 'ok' : ''}`}>{up ? `${Math.round(live.alt)}° up` : 'Below the horizon'}</span>
+        <span>{up ? `in the ${direction(live.az)}` : ''}</span>
+        {d?.mag != null && <span className="muted">magnitude {d.mag.toFixed(1)}</span>}
+        {live.phase != null && k !== 'sun' && <span className="muted">{Math.round(live.phase * 100)}% lit</span>}
+      </div>}
+      {d && <>
+        <dl className="sky-facts">
+          {d.always === 'up' ? <><dt>Today</dt><dd>Never sets here</dd></> : d.always === 'down' ? <><dt>Today</dt><dd>Never rises here</dd></> : <>
+            {d.rise && <><dt>Rises</dt><dd>{fmtAt(d.rise, tz)}</dd></>}
+            {d.transit && <><dt>Highest</dt><dd>{fmtAt(d.transit, tz)}</dd></>}
+            {d.set && <><dt>Sets</dt><dd>{fmtAt(d.set, tz)}</dd></>}
+          </>}
+          {d.body && d.body.dist_km > 0 && <><dt>Distance</dt><dd>{d.body.dist_au > 0.05 ? `${d.body.dist_au.toFixed(2)} AU (${Math.round(d.body.dist_km / 1e6).toLocaleString()} million km)` : `${Math.round(d.body.dist_km).toLocaleString()} km`}</dd></>}
+        </dl>
+        {d.tonight && <p className="small">{d.tonight}</p>}
+        {d.about && <p className="small muted">{d.about}</p>}
+        {d.seen && <p className="small"><Icon name="check-circle" size={14} className="ok" /> You logged it {d.seen.times === 1 ? 'once' : `${d.seen.times} times`}, first on {fmtDate(d.seen.first)}.</p>}
+        {ai.text && <p className="small sky-ai">{ai.text}</p>}
+      </>}
+      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {!pointing && <button type="button" className="btn sm" onClick={onCenter}><Icon name="crosshair" size={14} />Centre</button>}
+        {d && <button type="button" className="btn sm" onClick={toggleTarget}><Icon name={d.target_id ? 'check' : 'target'} size={14} />{d.target_id ? 'On your list' : 'Want to see'}</button>}
+        <button type="button" className="btn sm" onClick={onLog}><Icon name="journal" size={14} />Log it</button>
+        <button type="button" className="btn sm" onClick={explain} disabled={ai.busy}>{ai.busy ? <Spinner /> : <Icon name="sparkles" size={14} />}Tell me more</button>
+      </div>
+    </div>
+  )
+}

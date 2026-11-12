@@ -1,0 +1,16 @@
+Pocket Sky
+Copyright 2026 Aleksandar Bjelosevic — MIT License (see LICENSE)
+
+The fixed sky in internal/catalog/data comes from d3-celestial
+(https://github.com/ofrohn/d3-celestial), BSD 3-Clause License,
+Copyright (c) 2015, Olaf Frohn, built with scripts/catalog.py. Its sources:
+- stars: XHIP, An Extended Hipparcos Compilation (Anderson & Francis 2012, VizieR V/137D)
+- star names: the IAU list and the HD/HIP/Bayer/Flamsteed cross indexes (VizieR IV/27A, IV/22)
+- constellation lines and names: the IAU constellation pages; borders: Davenhall & Leggett 1989 (VizieR VI/49)
+- Messier objects: SEDS, H. Frommert (messier.seds.org)
+- Milky Way outline: Jose R. Vieira (skymap.com)
+
+Positions of the Sun, the Moon and the planets: Paul Schlyter, "How to compute
+planetary positions" (stjarnhimlen.se); precession and eclipses after Jean Meeus,
+"Astronomical Algorithms". Meteor shower figures: International Meteor Organization.
+Cloud forecast: Open-Meteo.com (CC BY 4.0). Place names: © OpenStreetMap contributors.
