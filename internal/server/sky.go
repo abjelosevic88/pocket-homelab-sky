@@ -894,6 +894,9 @@ func objectFor(key string) (catalog.Object, bool) {
 		}
 		return catalog.Object{Key: key, Name: astro.Names[key], Kind: kind, Type: typ, About: about}, true
 	}
+	if strings.HasPrefix(key, "dbl:") {
+		return doubleObject(key)
+	}
 	return catalog.Lookup(key)
 }
 

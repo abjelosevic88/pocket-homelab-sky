@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { useOnChange } from '../lib/data'
-import { fmtDate } from '../lib/format'
+import { fmtAt, fmtDate, fmtDayAt } from '../lib/format'
+import { registerExtra } from '../lib/sky'
 import { placeQuery, usePlace } from '../lib/place'
 import type { Progress, ProgressGroup, Target } from '../lib/types'
 import { useCrumb } from '../components/Layout'
@@ -12,7 +13,7 @@ import { Icon } from '../components/icons'
 import { ObjectPicker } from '../components/ObjectPicker'
 import { Card, Empty, Loading, Switch, Tabs, useToast } from '../components/ui'
 
-type Tab = 'want' | 'messier' | 'planets' | 'constellations' | 'favourites'
+type Tab = 'want' | 'messier' | 'planets' | 'constellations' | 'favourites' | 'doubles'
 
 export default function Lists() {
   useCrumb(undefined)
@@ -42,12 +43,14 @@ export default function Lists() {
         { id: 'want', label: 'Want to see', icon: 'target' }, { id: 'messier', label: 'Messier list', icon: 'sparkles' },
         { id: 'planets', label: 'Planets and the Moon', icon: 'planet' }, { id: 'constellations', label: 'Constellations', icon: 'constellation' },
         { id: 'favourites', label: 'More favourites', icon: 'star' },
+        { id: 'doubles', label: 'Doubles and variables', icon: 'eye' },
       ]} />
       {!prog && <Loading />}
       {tab === 'want' && <Want targets={targets} onChange={load} />}
       {prog && tab === 'messier' && <Group g={prog.messier} title="The Messier list" sub="110 clusters, nebulae and galaxies Charles Messier listed in the 1700s: the classic list to work through with binoculars and a small telescope." />}
       {prog && tab === 'planets' && <Group g={prog.planets} title="Planets and the Moon" sub="Uranus needs binoculars and a chart; Neptune a telescope." />}
       {prog && tab === 'constellations' && <Group g={prog.constellations} title="The 88 constellations" sub="Log a constellation when you have found its shape in the sky." />}
+      {tab === 'doubles' && <Doubles q={q} />}
       {prog && tab === 'favourites' && <Group g={prog.highlights} title="More favourites" sub="Well-loved sights outside the Messier list (some only from the south)." />}
     </div>
   )
@@ -108,5 +111,41 @@ function Group({ g, title, sub }: { g: ProgressGroup; title: string; sub: string
         {items.length === 0 && <p className="muted small pad">Nothing matches.</p>}
       </div>
     </Card>
+  )
+}
+
+interface DoubleRow { key: string; name: string; con_name: string; mag1: number; mag2: number; sep_arcsec: number; colors: string; kit: string; about: string; best_at: string | null; best_alt: number; dir: string; seen: string; ra: number; dec: number }
+interface VarRow { name: string; key: string; what: string; times: string[] }
+
+function Doubles({ q }: { q: string }) {
+  const navigate = useNavigate()
+  const { place } = usePlace()
+  const [d, setD] = useState<{ doubles: DoubleRow[]; variables: VarRow[] } | null>(null)
+  useEffect(() => { api.get<{ doubles: DoubleRow[]; variables: VarRow[] }>(`${V1}/doubles?${q}`).then(r => { setD(r); for (const x of r.doubles) registerExtra(x.key, x.ra, x.dec, false) }).catch(() => {}) }, [q])
+  if (!d) return <Loading />
+  const tz = place?.timezone
+  return (
+    <div className="stack loose">
+      <Card title="Double stars" sub="Stars that split into two (or more) in binoculars or a small telescope, many in lovely contrasting colours." flush>
+        <div className="list">
+          {d.doubles.map(x => (
+            <button key={x.key} type="button" className="list-row" onClick={() => navigate(`/map?object=${encodeURIComponent(x.key)}`)}>
+              <Icon name={x.seen ? 'check-circle' : 'circle'} size={15} className={x.seen ? 'ok' : 'muted'} />
+              <span className="row-main grow"><span className="row-title">{x.name} <span className="muted small">in {x.con_name}</span></span>
+                <span className="row-sub small muted">{x.colors} · {x.sep_arcsec}″ apart · {x.kit}{x.best_alt > 15 && x.best_at ? ` · best ${fmtAt(x.best_at, tz)} ${x.dir}` : ' · not well placed tonight'}</span></span>
+            </button>
+          ))}
+        </div>
+      </Card>
+      <Card title="Stars that change" sub="Variable stars you can watch change with your eyes, at times that can be seen from here in the next two weeks.">
+        {d.variables.map(v => (
+          <div key={v.name} className="mt-s">
+            <div className="row-title">{v.name}</div>
+            <p className="small muted">{v.name} is {v.what}.</p>
+            <p className="small">{v.times.length ? v.times.slice(0, 6).map(t => `${fmtDayAt(t, tz)} ${fmtAt(t, tz)}`).join(' · ') : 'Not at a dark hour from here in the next two weeks.'}</p>
+          </div>
+        ))}
+      </Card>
+    </div>
   )
 }

@@ -38,7 +38,7 @@ func (s *Server) publicSettings(ctx context.Context, u *store.User, st store.Set
 		"temp_unit": st.TempUnit,
 		"mag_limit": st.MagLimit, "show_lines": st.ShowLines, "show_con_names": st.ShowConNames, "show_star_names": st.ShowStarNames, "show_dso": st.ShowDSO,
 		"show_milky_way": st.ShowMilkyWay, "show_grid": st.ShowGrid, "show_equator": st.ShowEquator, "show_ecliptic": st.ShowEcliptic, "night_red": st.NightRed,
-		"camera_fov": st.CameraFOV, "cloud_max": st.CloudMax,
+		"camera_fov": st.CameraFOV, "cloud_max": st.CloudMax, "red_spot_lon": st.RedSpotLon,
 		"notify_clear": st.NotifyClear, "notify_events": st.NotifyEvents, "event_kinds": st.EventKinds, "event_kinds_all": store.EventKinds, "notify_hour": st.NotifyHour,
 		"notify_url": st.NotifyURL, "notify_format": st.NotifyFormat, "notify_configured": st.NotifyURL != "", "push_phone": st.PushPhone,
 		"ai_plan":     st.AIPlan,
@@ -116,7 +116,8 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 	if !num("mag_limit", &cur.MagLimit, in.MagLimit, 2, 6.5, "the faintest stars are magnitude 2 to 6.5") ||
-		!num("camera_fov", &cur.CameraFOV, in.CameraFOV, 20, 120, "the camera's view is 20° to 120°") {
+		!num("camera_fov", &cur.CameraFOV, in.CameraFOV, 20, 120, "the camera's view is 20° to 120°") ||
+		!num("red_spot_lon", &cur.RedSpotLon, in.RedSpotLon, 0, 360, "the Red Spot's longitude is 0° to 360°") {
 		return
 	}
 	if keys["cloud_max"] {

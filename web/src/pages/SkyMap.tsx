@@ -10,7 +10,8 @@ import { type BodyKey, BODIES, NAMES, altAz, at, dirShort, direction } from '../
 import { fmtAt, fmtDate, fmtDayAt } from '../lib/format'
 import { Pointer, askSensors, openCamera, sensorsAvailable } from '../lib/orientation'
 import { placeQuery, usePlace } from '../lib/place'
-import { type Catalog, type Guide, type Layers, type Painted, directionOf, draw, frameOf, hitTest, loadCatalog, starLabel } from '../lib/sky'
+import { type Catalog, type Guide, type Layers, type Painted, directionOf, draw, frameOf, hitTest, loadCatalog, registerExtra, starLabel } from '../lib/sky'
+import { MoonMapButton, PlanetDetail } from '../components/SkyDetails'
 import type { ObjectDetail, SatNow, Settings, SkyObject, Tonight } from '../lib/types'
 import { Icon } from '../components/icons'
 import { PlacePicker } from '../components/PlacePicker'
@@ -67,6 +68,8 @@ export default function SkyMap() {
   const [tour, setTour] = useState<{ steps: TourStep[]; i: number } | null>(null)
   const sats = useRef<{ at: number; list: SatNow[] } | null>(null)
   const [satSel, setSatSel] = useState<SatNow | null>(null)
+  const minor = useRef<MinorObj[]>([])
+  const [minorSel, setMinorSel] = useState<MinorObj | null>(null)
   const painted = useRef<Painted | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -117,6 +120,7 @@ export default function SkyMap() {
       camera, layers: st.layers, magLimit: st.magLimit, selected: st.selected || undefined,
       path: st.path || undefined, guide: st.mode === 'point' && st.guideKey ? st.guideKey : undefined, hourLabel: tt => fmtAt(tt, st.tz),
       sats: st.live && sats.current ? satsAt(sats.current, st.t) : undefined,
+      minor: minor.current,
     })
     painted.current = p
     if (st.mode === 'point') {
@@ -157,8 +161,19 @@ export default function SkyMap() {
 
   const keepView = () => localStorage.setItem(VIEW_KEY, JSON.stringify(view.current))
 
-  // satellites above the horizon, fetched every 20 seconds while the time is now
   const pq = placeQuery(place)
+  // comets and asteroids (they move slowly: once per place and day)
+  const day = Math.floor(t / 86400000)
+  useEffect(() => {
+    if (!pq) return
+    api.get<{ objects: MinorObj[] }>(`${V1}/minor?${pq}&t=${day * 86400000 + 43200000}`).then(r => {
+      minor.current = r.objects
+      for (const m of r.objects) registerExtra(m.key, m.ra, m.dec, true)
+      schedule()
+    }).catch(() => {})
+  }, [pq, day, schedule])
+
+  // satellites above the horizon, fetched every 20 seconds while the time is now
   useEffect(() => {
     if (!pq || !live) { sats.current = null; return }
     let alive = true
@@ -239,7 +254,8 @@ export default function SkyMap() {
     if (g && !g.moved && performance.now() - g.t < 500 && painted.current) {
       const r = canvas.current!.getBoundingClientRect()
       const hit = hitTest(painted.current, e.clientX - r.left, e.clientY - r.top, cat)
-      if (hit?.kind === 'sat') { setSatSel(sats.current?.list.find(x => 'sat:' + x.norad === hit.key) || null); setSelected('') }
+      if (hit?.kind === 'minor') { setMinorSel(minor.current.find(x => x.key === hit.key) || null); setSelected(''); setSatSel(null) }
+      else if (hit?.kind === 'sat') { setSatSel(sats.current?.list.find(x => 'sat:' + x.norad === hit.key) || null); setSelected('') }
       else if (hit) { setSelected(hit.key); setSelName(hit.name); setSatSel(null) } else { setSelected(''); setSatSel(null) }
     }
   }
@@ -494,6 +510,7 @@ export default function SkyMap() {
           path={path === selected} onPath={() => setPath(p => (p === selected ? '' : selected))}
           onFind={() => { setGuideKey(selected); setGuideName(selName || selected); setSelected('') }} />}
         {satSel && !tour && !selected && <SatSheet s={satSel} onClose={() => setSatSel(null)} />}
+        {minorSel && !tour && !selected && <MinorSheet m={minorSel} tz={place?.timezone} onClose={() => setMinorSel(null)} onPath={() => { setPath(minorSel.key) }} />}
         {tour && <TourPanel tour={tour} onStep={i => showStep(tour.steps, i)} onEnd={() => { setTour(null); setGuideKey(''); setSelected('') }} />}
       </div>
     </div>
@@ -569,6 +586,7 @@ function InfoSheet({ k, name, t, placeQ, cat, obs, tz, onClose, onCenter, pointi
         {d.tonight && <p className="small">{d.tonight}</p>}
         {d.about && <p className="small muted">{d.about}</p>}
         {d.seen && <p className="small"><Icon name="check-circle" size={14} className="ok" /> You logged it {d.seen.times === 1 ? 'once' : `${d.seen.times} times`}, first on {fmtDate(d.seen.first)}.</p>}
+        {(k === 'jupiter' || k === 'saturn') && <PlanetDetail k={k} t={t} tz={tz} />}
         {ai.text && <p className="small sky-ai">{ai.text}</p>}
       </>}
       <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
@@ -577,6 +595,7 @@ function InfoSheet({ k, name, t, placeQ, cat, obs, tz, onClose, onCenter, pointi
         {k !== 'sun' && <button type="button" className={`btn sm ${path ? 'on' : ''}`} onClick={onPath} aria-pressed={path}><Icon name="route" size={14} />{path ? 'Hide its path' : 'Path tonight'}</button>}
         {d && <button type="button" className="btn sm" onClick={toggleTarget}><Icon name={d.target_id ? 'check' : 'target'} size={14} />{d.target_id ? 'On your list' : 'Want to see'}</button>}
         <button type="button" className="btn sm" onClick={onLog}><Icon name="journal" size={14} />Log it</button>
+        {k === 'moon' && <MoonMapButton t={t} />}
         <button type="button" className="btn sm" onClick={explain} disabled={ai.busy}>{ai.busy ? <Spinner /> : <Icon name="sparkles" size={14} />}Tell me more</button>
       </div>
     </div>
@@ -682,6 +701,24 @@ function SatSheet({ s, onClose }: { s: SatNow; onClose: () => void }) {
       </div>
       <div className="sky-sheet-now"><span className="pill ok">{Math.round(s.alt)}° up</span><span>in the {direction(s.az)}, moving {dir >= 0 ? 'clockwise' : 'anticlockwise'} towards the {direction(s.az2 + (s.az2 - s.az) * 3)}</span></div>
       <p className="small">{s.sunlit ? `Lit by the Sun: magnitude ${s.mag}, ${s.mag < 0 ? 'brighter than almost every star' : s.mag < 2 ? 'easy to see' : 'faint'}. It crosses the sky in a few minutes without blinking (a blinking light is a plane).` : 'In the Earth\'s shadow now, so it cannot be seen.'}</p>
+    </div>
+  )
+}
+
+// ---- comets and asteroids ----
+
+interface MinorObj { key: string; name: string; kind: string; mag: number; ra: number; dec: number; alt: number; az: number; con_name: string; dist_au: number; sun_au: number; best_at: string | null; dir: string; kit: string; words: string }
+
+function MinorSheet({ m, tz, onClose, onPath }: { m: MinorObj; tz?: string; onClose: () => void; onPath: () => void }) {
+  return (
+    <div className="sky-sheet" role="dialog" aria-label={m.name}>
+      <div className="sky-sheet-head">
+        <div className="grow"><div className="sky-sheet-title">{m.name}</div><div className="muted small">{m.kind === 'comet' ? 'Comet' : 'Asteroid'} · in {m.con_name} · magnitude {m.mag}</div></div>
+        <button type="button" className="btn ghost icon-only" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
+      </div>
+      <p className="small">{m.words}</p>
+      <p className="small muted">{m.dist_au} AU from the Earth, {m.sun_au} AU from the Sun.{m.kind === 'comet' ? ' Comets often turn out brighter or fainter than forecast.' : ''}{m.best_at ? ` Best at ${fmtAt(m.best_at, tz)}.` : ''}</p>
+      <div className="row" style={{ gap: 6 }}><button type="button" className="btn sm" onClick={onPath}><Icon name="route" size={14} />Path tonight</button></div>
     </div>
   )
 }

@@ -61,6 +61,7 @@ export default function Tonight() {
           <Planets list={data.planets} tz={tz} />
           <Sights list={data.sights} tz={tz} />
         </div>
+        <MinorCard q={q} tz={tz} date={data.date} />
         <Card title="Satellites tonight" sub="Bright passes of the space stations and Starlink trains" actions={<Link to="/events#satellites" className="btn ghost sm">All passes<Icon name="chevron-right" size={14} /></Link>} flush>
           <SatPasses q={q} tz={tz} days={1} compact />
         </Card>
@@ -300,6 +301,32 @@ function AirCard({ v }: { v: TonightView }) {
         {v.aurora && <div className={`tn-air-item ${v.aurora.likely ? 'hot' : ''}`}><span className="muted small">Northern lights</span><b>{v.aurora.likely ? 'Possible tonight' : 'Not tonight'} · Kp {v.aurora.kp_max.toFixed(0)}</b><span className="muted small">{v.aurora.words}</span></div>}
       </div>
       <p className="muted small mt">Seeing and transparency by 7Timer!; space weather by NOAA; light pollution from the World Atlas by D. Lorenz.</p>
+    </Card>
+  )
+}
+
+interface Minor { key: string; name: string; kind: string; mag: number; con_name: string; best_at: string | null; kit: string; words: string; best_alt: number }
+
+function MinorCard({ q, tz, date }: { q: string; tz?: string; date: string }) {
+  const navigate = useNavigate()
+  const [list, setList] = useState<Minor[] | null>(null)
+  useEffect(() => {
+    if (!q) return
+    const t = new Date(date + 'T22:00:00').getTime()
+    api.get<{ objects: Minor[] }>(`${V1}/minor?${q}&t=${t}`).then(r => setList(r.objects.filter(o => o.best_alt > 10).slice(0, 5))).catch(() => setList([]))
+  }, [q, date])
+  if (!list || list.length === 0) return null
+  return (
+    <Card title="Comets and asteroids" sub="The brightest ones up tonight; comets often surprise, brighter or fainter than forecast" flush>
+      <div className="list">
+        {list.map(m => (
+          <button key={m.key} type="button" className="list-row" onClick={() => navigate(`/map?object=${encodeURIComponent(m.key)}`)}>
+            <Icon name={m.kind === 'comet' ? 'sparkles' : 'dot'} size={16} className="muted" />
+            <span className="row-main grow"><span className="row-title">{m.name}</span><span className="row-sub small muted">{m.words}</span></span>
+            <span className="tnum small muted">{fmtAt(m.best_at, tz)}</span>
+          </button>
+        ))}
+      </div>
     </Card>
   )
 }

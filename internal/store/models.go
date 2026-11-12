@@ -132,6 +132,7 @@ type Settings struct {
 	ShowEcliptic  bool    `json:"show_ecliptic"` // the Sun's path
 	NightRed      bool    `json:"night_red"`     // everything red, to keep your night vision
 	CameraFOV     float64 `json:"camera_fov"`    // how much of the sky the phone's camera sees, top to bottom (degrees)
+	RedSpotLon    float64 `json:"red_spot_lon"`  // Jupiter's Great Red Spot, System II longitude (it drifts; JUPOS publishes it)
 
 	// What counts as a clear night.
 	CloudMax int `json:"cloud_max"` // % cloud at most, on average over the dark hours

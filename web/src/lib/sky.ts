@@ -30,6 +30,10 @@ export interface Catalog {
 
 let catalogP: Promise<Catalog> | null = null
 
+/** Things the map can find that are not in the fixed catalogue: comets, asteroids, double stars. */
+const extras = new Map<string, { v: Vec3; ofDate: boolean }>()
+export function registerExtra(key: string, ra: number, dec: number, ofDate: boolean) { extras.set(key, { v: vec(ra, dec), ofDate }) }
+
 export function loadCatalog(): Promise<Catalog> {
   if (!catalogP) {
     catalogP = api.get<RawCatalog>(`${V1}/catalog`).then(prepare)
@@ -134,6 +138,8 @@ export interface View {
   hourLabel?: (t: number) => string
   /** satellites above the horizon now (already moved to this moment) */
   sats?: { key: string; name: string; alt: number; az: number; mag: number; sunlit: boolean; label: boolean }[]
+  /** comets and asteroids (equator of date) */
+  minor?: { key: string; name: string; kind: string; ra: number; dec: number; mag: number }[]
 }
 
 /** The view frame for looking at an altitude and azimuth with no tilt. */
@@ -162,7 +168,7 @@ function clipZ(pts: Vec3[], zmin: number): Vec3[] {
   return out
 }
 
-export interface Hit { key: string; name: string; kind: 'body' | 'star' | 'dso' | 'constellation' | 'sat'; x: number; y: number; d: number }
+export interface Hit { key: string; name: string; kind: 'body' | 'star' | 'dso' | 'constellation' | 'sat' | 'minor'; x: number; y: number; d: number }
 
 export interface Guide { key: string; onScreen: boolean; x: number; y: number; angle: number; off: number; turn: string }
 
@@ -409,6 +415,30 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cat: C
     }
   }
 
+  // ---- comets and asteroids ----
+  if (v.minor) {
+    for (const m of v.minor) {
+      if (m.mag > limit + 4) continue
+      const c = camOf(CH, vec(m.ra, m.dec))
+      const p = px(c[0], c[1], c[2])
+      if (!onScreen(p, 10)) continue
+      const [x, y] = p!
+      if (m.kind === 'comet') {
+        // a little tail pointing away from the Sun
+        const sp = pxClamp(sunCam[0], sunCam[1], sunCam[2])
+        const ang = Math.atan2(y - sp[1], x - sp[0])
+        const g = ctx.createLinearGradient(x, y, x + Math.cos(ang) * 22, y + Math.sin(ang) * 22)
+        g.addColorStop(0, 'rgba(170, 255, 220, 0.7)'); g.addColorStop(1, 'rgba(170, 255, 220, 0)')
+        ctx.strokeStyle = g; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(ang) * 22, y + Math.sin(ang) * 22); ctx.stroke()
+        ctx.fillStyle = '#c8ffe8'; ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill()
+      } else {
+        ctx.fillStyle = '#e8dcc0'; ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill()
+      }
+      out.push({ key: m.key, name: m.name, kind: 'minor', x, y, r: 8 })
+      if (m.mag < 9 || v.fov < 60) labels.push({ x, y, text: m.name.replace(/^\d+\s/, ''), font: '500 10.5px system-ui, sans-serif', color: m.kind === 'comet' ? '#b9ffe0' : '#e8dcc0', pri: 30 - m.mag, dx: 6, dy: 4 })
+    }
+  }
+
   // ---- satellites ----
   if (v.sats) {
     for (const st of v.sats) {
@@ -487,6 +517,8 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cat: C
   // ---- an object's path through the night ----
   const enuOf = (key: string, tt: number): Vec3 | null => {
     if ((BODIES as string[]).includes(key)) { const b = at(key as BodyKey, v.obs, tt); return enu(b.alt, b.az) }
+    const ex = extras.get(key)
+    if (ex) return apply(horizonMatrix(v.obs, tt), ex.ofDate ? ex.v : apply(P, ex.v))
     if (!cat) return null
     let vv: Vec3 | undefined
     if (key.startsWith('dso:')) vv = cat.dsos.find(d => d.key === key)?.v
@@ -634,6 +666,8 @@ export function hitTest(p: Painted, x: number, y: number, cat: Catalog | null): 
 /** The direction (J2000) of an object of the catalogue, or of a body now. */
 export function directionOf(cat: Catalog | null, key: string, o: Observer, t: number): { alt: number; az: number } | null {
   if ((BODIES as string[]).includes(key)) { const s = at(key as BodyKey, o, t); return { alt: s.alt, az: s.az } }
+  const ex = extras.get(key)
+  if (ex) { const [alt, az] = altAz(apply(horizonMatrix(o, t), ex.ofDate ? ex.v : apply(precession(t), ex.v))); return { alt, az } }
   if (!cat) return null
   let v: Vec3 | undefined
   if (key.startsWith('dso:')) v = cat.dsos.find(d => d.key === key)?.v

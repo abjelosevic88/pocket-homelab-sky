@@ -478,3 +478,13 @@ button.list-row:hover { background: var(--hover); }
 .tn-air-item.hot { background: color-mix(in srgb, #22c55e 14%, var(--surface-2)); }
 .km-pick { width: 150px; flex: 0 1 150px; }
 .ev-sat { background: color-mix(in srgb, #0ea5e9 16%, transparent); color: color-mix(in srgb, #0ea5e9 80%, var(--text)); }
+.planet-detail { display: grid; gap: 4px; color: #dfe6ff; }
+.planet-detail svg { display: block; }
+.moon-map { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 700px) { .moon-map { grid-template-columns: minmax(0, 1fr); } }
+.moon-canvas { position: relative; margin: 0 auto; background: #05070d; border-radius: 50%; }
+.moon-canvas canvas { display: block; border-radius: 50%; }
+.moon-label { position: absolute; transform: translate(-50%, -50%); font: 500 10px system-ui, sans-serif; color: #f4f1e4; background: rgba(10, 14, 30, .55); border: 0; border-radius: 4px; padding: 1px 4px; cursor: pointer; white-space: nowrap; }
+.moon-label.sea { background: none; color: rgba(255, 255, 255, .75); font-style: italic; }
+.moon-label.best { background: rgba(255, 196, 92, .85); color: #2a1c00; font-weight: 650; }
+.moon-side .list.bordered { max-height: 260px; overflow-y: auto; }

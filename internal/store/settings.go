@@ -16,7 +16,7 @@ var boxKeys = map[string]bool{"title": true, "setup_complete": true}
 func (s *Store) defaults() Settings {
 	return Settings{Title: DefaultTitle, DateFormat: "auto", TimeFormat: "auto", WeekStart: 1, TempUnit: "c",
 		MagLimit: 5.5, ShowLines: true, ShowConNames: true, ShowStarNames: true, ShowDSO: true, ShowMilkyWay: true,
-		ShowGrid: false, ShowEquator: false, ShowEcliptic: true, NightRed: false, CameraFOV: 62,
+		ShowGrid: false, ShowEquator: false, ShowEcliptic: true, NightRed: false, CameraFOV: 64, RedSpotLon: 60,
 		CloudMax: 35, NotifyClear: true, NotifyEvents: true, EventKinds: DefaultEventKinds(), NotifyHour: s.NotifyHour, NotifyFormat: "apprise", PushPhone: true,
 		AIPlan: true, Conns: map[string]Conn{}, AIProvider: "auto"}
 }
