@@ -265,7 +265,6 @@ export default function SkyMap() {
     } catch (e) {
       const msg = (e as Error).name === 'NotAllowedError' ? 'The camera is not allowed for this site (Settings → Safari → Camera, or the aA menu → Website Settings). The stars work without it.' : (e as Error).message
       setCamErr(msg)
-      toast(msg, 'err')
     }
   }
   const stopCamera = () => { stream.current?.getTracks().forEach(tr => tr.stop()); stream.current = null; setCamOn(false) }
@@ -374,10 +373,8 @@ export default function SkyMap() {
         {pointing && (
           <div className="sky-aim">
             <Icon name="crosshair" size={44} strokeWidth={1.2} className="sky-cross" />
-            {aim && <div className="sky-aim-text">
-              {aim.name ? <button type="button" className="sky-btn" onClick={() => { setSelected(aim.key); setSelName(aim.name) }}><b>{aim.name}</b></button> : null}
-              <span className="sky-aim-dir">{aim.alt}° up · {dirShort(aim.az)} {aim.az}°</span>
-            </div>}
+            {aim?.name && <button type="button" className="sky-btn sky-aim-name" onClick={() => { setSelected(aim.key); setSelName(aim.name) }}><b>{aim.name}</b></button>}
+            {aim && <span className="sky-aim-dir">{aim.alt}° up · {dirShort(aim.az)} {aim.az}°</span>}
             {!northFound && !noSensor && <div className="sky-hint">Finding north: hold the phone upright for a moment, camera towards the horizon.</div>}
             {camErr && northFound && !noSensor && <div className="sky-hint">{camErr}</div>}
             {noSensor && <div className="sky-hint">No compass readings yet. Move the phone in a figure of eight; if nothing happens, this device has no compass.</div>}
