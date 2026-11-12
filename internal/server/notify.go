@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+
 	"fmt"
+	core "github.com/abjelosevic88/pocket-homelab-core/sdk"
 	"net/http"
 	"strings"
 	"time"
@@ -156,15 +158,35 @@ func (s *Server) evening(ctx context.Context, uid int64, st store.Settings, forc
 		return "", false
 	}
 	body := strings.Join(lines, "\n")
-	if st.NotifyURL == "" {
-		return body, false
+	_ = link
+	return body, s.sendMessage(ctx, uid, st, title, body, prio)
+}
+
+// sendMessage sends one message: to the person's message URL (Apprise, ntfy
+// or a webhook) and, through Pocket Core, to their phones with Pocket Hub.
+// True when it went anywhere.
+func (s *Server) sendMessage(ctx context.Context, uid int64, st store.Settings, title, body, prio string) bool {
+	sent := false
+	link := strings.TrimRight(s.cfg.BaseURL, "/") + "/"
+	if st.NotifyURL != "" {
+		n := notify.New(st.NotifyURL, st.NotifyFormat)
+		if err := n.Send(ctx, notify.Message{Title: title, Body: body, Priority: prio, Tags: []string{"star2"}, Link: link}); err != nil {
+			s.log.Warn("notify", "user", uid, "err", err)
+		} else {
+			sent = true
+		}
 	}
-	n := notify.New(st.NotifyURL, st.NotifyFormat)
-	if err := n.Send(ctx, notify.Message{Title: title, Body: body, Priority: prio, Tags: []string{"star2"}, Link: link}); err != nil {
-		s.log.Warn("notify", "user", uid, "err", err)
-		return body, false
+	if st.PushPhone && s.core.Configured() {
+		if u, err := s.store.GetUser(ctx, uid); err == nil {
+			res, err := s.core.Notify(ctx, u.Email, core.PushMessage{Title: title, Body: body, URL: link, Source: "sky", Thread: "sky", Sound: prio == "high"})
+			if err == nil && res != nil && res.Sent > 0 {
+				sent = true
+			} else if err != nil {
+				s.log.Debug("push", "user", uid, "err", err)
+			}
+		}
 	}
-	return body, true
+	return sent
 }
 
 // janitor runs the background work: every minute the evening messages (at
@@ -180,6 +202,7 @@ func (s *Server) janitor(ctx context.Context) {
 			return
 		case <-minute.C:
 			s.evenings(ctx)
+			s.satAlerts(ctx)
 		case <-tidy.C:
 			old := time.Now().AddDate(0, 0, -60).UTC().Format(time.RFC3339Nano)
 			_ = s.store.PurgeSent(ctx, old)

@@ -13,6 +13,7 @@ import { openAddPlace, useCrumb } from '../components/Layout'
 import { Icon } from '../components/icons'
 import { MoonGlyph, ScoreRing, EventIcon } from '../components/SkyBits'
 import { PlacePicker } from '../components/PlacePicker'
+import { SatPasses } from '../components/SatPasses'
 import { Card, Loading, Spinner, useToast } from '../components/ui'
 
 const addDays = (d: string, n: number) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10) }
@@ -60,6 +61,9 @@ export default function Tonight() {
           <Planets list={data.planets} tz={tz} />
           <Sights list={data.sights} tz={tz} />
         </div>
+        <Card title="Satellites tonight" sub="Bright passes of the space stations and Starlink trains" actions={<Link to="/events#satellites" className="btn ghost sm">All passes<Icon name="chevron-right" size={14} /></Link>} flush>
+          <SatPasses q={q} tz={tz} days={1} compact />
+        </Card>
         <Coming events={data.events} tz={tz} />
       </>}
     </div>

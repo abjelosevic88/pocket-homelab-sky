@@ -12,7 +12,8 @@ import { useCrumb } from '../components/Layout'
 import { Icon } from '../components/icons'
 import { EVENT_LABEL, EventIcon } from '../components/SkyBits'
 import { PlacePicker } from '../components/PlacePicker'
-import { Card, Empty, Loading, Switch, useToast } from '../components/ui'
+import { Card, Empty, Loading, Switch, Tabs, useToast } from '../components/ui'
+import { SatPasses } from '../components/SatPasses'
 
 const KINDS: EventKind[] = ['meteor_shower', 'lunar_eclipse', 'solar_eclipse', 'conjunction', 'opposition', 'elongation', 'moon_phase', 'season']
 
@@ -27,6 +28,7 @@ export default function Events() {
   const [err, setErr] = useState('')
   const [kinds, setKinds] = useState<Set<EventKind>>(() => new Set(KINDS.filter(k => k !== 'moon_phase')))
   const [onlyVisible, setOnlyVisible] = useState(true)
+  const [tab, setTab] = useState<'events' | 'sats'>(() => (loc.hash === '#satellites' ? 'sats' : 'events'))
   const q = placeQuery(place)
   useEffect(() => {
     if (!q) return
@@ -63,9 +65,12 @@ export default function Events() {
     <div className="stack loose">
       <div className="row wrap" style={{ gap: 8 }}>
         <PlacePicker />
+        <Tabs value={tab} onChange={setTab} tabs={[{ id: 'events', label: 'Sky events', icon: 'calendar' }, { id: 'sats', label: 'Satellites', icon: 'star' }]} />
         <span className="spacer" />
-        <label className="row small" style={{ gap: 8 }}><Switch size="sm" checked={onlyVisible} onChange={setOnlyVisible} label="Only what I can see" />Only what can be seen from here</label>
+        {tab === 'events' && <label className="row small" style={{ gap: 8 }}><Switch size="sm" checked={onlyVisible} onChange={setOnlyVisible} label="Only what I can see" />Only what can be seen from here</label>}
       </div>
+      {tab === 'sats' && <Card title="Satellites passing over" sub="The space stations, the brightest satellites and new Starlink trains you can see from here in the next three days: when, where to look and how bright." flush><SatPasses q={q} tz={place?.timezone} /></Card>}
+      {tab === 'events' && <>
       <div className="chips" role="group" aria-label="Kinds of events">
         {KINDS.map(k => (
           <button key={k} type="button" className={`chip ${kinds.has(k) ? 'on' : ''}`} aria-pressed={kinds.has(k)} onClick={() => { const n = new Set(kinds); if (n.has(k)) n.delete(k); else n.add(k); setKinds(n) }}>
@@ -96,6 +101,7 @@ export default function Events() {
           </div>
         </Card>
       ))}
+      </>}
     </div>
   )
 }

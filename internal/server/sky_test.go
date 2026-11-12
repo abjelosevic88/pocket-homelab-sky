@@ -282,3 +282,32 @@ func TestDemo(t *testing.T) {
 }
 
 func decodeBody(res *http.Response, v any) error { return json.NewDecoder(res.Body).Decode(v) }
+
+func TestSatellites(t *testing.T) {
+	a := newApp(t, nil)
+	addPlace(a, a.alice, "Home", 43.8563, 18.4131)
+	ps := a.ok(a.alice, "GET", "/api/v1/satellites/passes?days=3", nil)["passes"].([]any)
+	var iss, vis, train int
+	for _, x := range ps {
+		p := x.(map[string]any)
+		if p["name"] == "International Space Station" {
+			iss++
+		}
+		if p["visible"] == true {
+			vis++
+			if p["words"] == "" {
+				t.Fatalf("visible pass without words: %v", p)
+			}
+		}
+		if p["train"] == true {
+			train++
+		}
+	}
+	if iss == 0 || vis == 0 {
+		t.Fatalf("passes: %d ISS, %d visible, %d trains of %d", iss, vis, train, len(ps))
+	}
+	now := a.ok(a.alice, "GET", "/api/v1/satellites/now", nil)
+	if _, ok := now["satellites"].([]any); !ok {
+		t.Fatalf("now: %v", now)
+	}
+}

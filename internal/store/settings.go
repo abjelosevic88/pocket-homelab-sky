@@ -17,16 +17,16 @@ func (s *Store) defaults() Settings {
 	return Settings{Title: DefaultTitle, DateFormat: "auto", TimeFormat: "auto", WeekStart: 1, TempUnit: "c",
 		MagLimit: 5.5, ShowLines: true, ShowConNames: true, ShowStarNames: true, ShowDSO: true, ShowMilkyWay: true,
 		ShowGrid: false, ShowEquator: false, ShowEcliptic: true, NightRed: false, CameraFOV: 62,
-		CloudMax: 35, NotifyClear: true, NotifyEvents: true, EventKinds: DefaultEventKinds(), NotifyHour: s.NotifyHour, NotifyFormat: "apprise",
+		CloudMax: 35, NotifyClear: true, NotifyEvents: true, EventKinds: DefaultEventKinds(), NotifyHour: s.NotifyHour, NotifyFormat: "apprise", PushPhone: true,
 		AIPlan: true, Conns: map[string]Conn{}, AIProvider: "auto"}
 }
 
 // EventKinds are the sky events a person can be told about.
-var EventKinds = []string{"meteor_shower", "lunar_eclipse", "solar_eclipse", "conjunction", "opposition", "elongation", "moon_phase", "season", "aurora"}
+var EventKinds = []string{"meteor_shower", "lunar_eclipse", "solar_eclipse", "conjunction", "opposition", "elongation", "moon_phase", "season", "aurora", "satellite"}
 
 // DefaultEventKinds are the ones switched on at first.
 func DefaultEventKinds() []string {
-	return []string{"meteor_shower", "lunar_eclipse", "solar_eclipse", "conjunction", "opposition", "aurora"}
+	return []string{"meteor_shower", "lunar_eclipse", "solar_eclipse", "conjunction", "opposition", "aurora", "satellite"}
 }
 
 // Every setting is stored as its JSON value under its JSON name, so adding a

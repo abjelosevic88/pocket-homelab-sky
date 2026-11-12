@@ -92,3 +92,10 @@ export interface Progress {
 }
 
 export interface Overview { places: (Place & { tonight: NightSummary | null })[]; next_event: SkyEvent | null }
+
+export interface SatPass {
+  name: string; norad: number; group: 'station' | 'visual' | 'starlink'; start: string; peak: string; end: string
+  start_dir: string; peak_dir: string; end_dir: string; peak_az: number; peak_alt: number; mag: number
+  visible: boolean; visible_from?: string; visible_to?: string; train: boolean; count: number; words: string
+}
+export interface SatNow { name: string; norad: number; group: string; alt: number; az: number; alt2: number; az2: number; mag: number; sunlit: boolean; km: number }

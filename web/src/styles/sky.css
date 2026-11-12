@@ -477,3 +477,4 @@ button.list-row:hover { background: var(--hover); }
 .tn-air-item b { font-size: 14.5px; }
 .tn-air-item.hot { background: color-mix(in srgb, #22c55e 14%, var(--surface-2)); }
 .km-pick { width: 150px; flex: 0 1 150px; }
+.ev-sat { background: color-mix(in srgb, #0ea5e9 16%, transparent); color: color-mix(in srgb, #0ea5e9 80%, var(--text)); }

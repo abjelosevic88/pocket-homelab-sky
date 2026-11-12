@@ -143,6 +143,7 @@ type Settings struct {
 	NotifyHour   int      `json:"notify_hour"`
 	NotifyURL    string   `json:"notify_url"`
 	NotifyFormat string   `json:"notify_format"` // apprise | ntfy | json
+	PushPhone    bool     `json:"push_phone"`    // also to the phones with Pocket Hub, through Pocket Core
 
 	// AI: the night in plain words on Tonight.
 	AIPlan bool `json:"ai_plan"`

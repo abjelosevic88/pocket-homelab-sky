@@ -11,7 +11,7 @@ import { fmtAt, fmtDate, fmtDayAt } from '../lib/format'
 import { Pointer, askSensors, openCamera, sensorsAvailable } from '../lib/orientation'
 import { placeQuery, usePlace } from '../lib/place'
 import { type Catalog, type Guide, type Layers, type Painted, directionOf, draw, frameOf, hitTest, loadCatalog, starLabel } from '../lib/sky'
-import type { ObjectDetail, Settings, SkyObject, Tonight } from '../lib/types'
+import type { ObjectDetail, SatNow, Settings, SkyObject, Tonight } from '../lib/types'
 import { Icon } from '../components/icons'
 import { PlacePicker } from '../components/PlacePicker'
 import { useCrumb } from '../components/Layout'
@@ -65,6 +65,8 @@ export default function SkyMap() {
   const [guide, setGuide] = useState<Guide | null>(null)
   const [lineUp, setLineUp] = useState(false)
   const [tour, setTour] = useState<{ steps: TourStep[]; i: number } | null>(null)
+  const sats = useRef<{ at: number; list: SatNow[] } | null>(null)
+  const [satSel, setSatSel] = useState<SatNow | null>(null)
   const painted = useRef<Painted | null>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
@@ -83,8 +85,8 @@ export default function SkyMap() {
 
   const obs = useMemo(() => (place ? { lat: place.lat, lon: place.lon } : null), [place])
   const tz = place?.timezone
-  const stateRef = useRef({ t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov, path, guideKey, tz })
-  stateRef.current = { t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov, path, guideKey, tz }
+  const stateRef = useRef({ t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov, path, guideKey, tz, live })
+  stateRef.current = { t, obs, layers, mode, camOn, selected, magLimit: settings?.mag_limit ?? 5.5, camFov, path, guideKey, tz, live }
 
   const paint = useCallback(() => {
     raf.current = 0
@@ -114,6 +116,7 @@ export default function SkyMap() {
       t: st.t, obs: st.obs, ...fr, fov: camera ? st.camFov : view.current.fov, proj: camera ? 'gnomonic' : 'stereo', fovLong: camera,
       camera, layers: st.layers, magLimit: st.magLimit, selected: st.selected || undefined,
       path: st.path || undefined, guide: st.mode === 'point' && st.guideKey ? st.guideKey : undefined, hourLabel: tt => fmtAt(tt, st.tz),
+      sats: st.live && sats.current ? satsAt(sats.current, st.t) : undefined,
     })
     painted.current = p
     if (st.mode === 'point') {
@@ -153,6 +156,17 @@ export default function SkyMap() {
   }, [schedule, mode])
 
   const keepView = () => localStorage.setItem(VIEW_KEY, JSON.stringify(view.current))
+
+  // satellites above the horizon, fetched every 20 seconds while the time is now
+  const pq = placeQuery(place)
+  useEffect(() => {
+    if (!pq || !live) { sats.current = null; return }
+    let alive = true
+    const get = () => api.get<{ satellites: SatNow[] }>(`${V1}/satellites/now?${pq}`).then(r => { if (alive) { sats.current = { at: Date.now(), list: r.satellites }; schedule() } }).catch(() => {})
+    get()
+    const id = window.setInterval(() => { if (document.visibilityState === 'visible') get() }, 20000)
+    return () => { alive = false; window.clearInterval(id) }
+  }, [pq, live, schedule])
 
   // ---- going to an object ----
   const goTo = useCallback((key: string, glide = true) => {
@@ -225,7 +239,8 @@ export default function SkyMap() {
     if (g && !g.moved && performance.now() - g.t < 500 && painted.current) {
       const r = canvas.current!.getBoundingClientRect()
       const hit = hitTest(painted.current, e.clientX - r.left, e.clientY - r.top, cat)
-      if (hit) { setSelected(hit.key); setSelName(hit.name) } else setSelected('')
+      if (hit?.kind === 'sat') { setSatSel(sats.current?.list.find(x => 'sat:' + x.norad === hit.key) || null); setSelected('') }
+      else if (hit) { setSelected(hit.key); setSelName(hit.name); setSatSel(null) } else { setSelected(''); setSatSel(null) }
     }
   }
   const onWheel = (e: React.WheelEvent) => {
@@ -478,6 +493,7 @@ export default function SkyMap() {
           onClose={() => setSelected('')} onCenter={() => goTo(selected)} pointing={pointing} onLog={() => navigate(`/log?add=${encodeURIComponent(selected)}`)}
           path={path === selected} onPath={() => setPath(p => (p === selected ? '' : selected))}
           onFind={() => { setGuideKey(selected); setGuideName(selName || selected); setSelected('') }} />}
+        {satSel && !tour && !selected && <SatSheet s={satSel} onClose={() => setSatSel(null)} />}
         {tour && <TourPanel tour={tour} onStep={i => showStep(tour.steps, i)} onEnd={() => { setTour(null); setGuideKey(''); setSelected('') }} />}
       </div>
     </div>
@@ -638,6 +654,34 @@ function LineUp({ obs, t, cat, onPick, onClose }: { obs: { lat: number; lon: num
       <div className="lineup-list">
         {list.map(x => <button key={x.name} type="button" className="btn sm" onClick={() => onPick(x.name, x.az)}>{x.name}<span className="muted small">{Math.round(x.alt)}° up {dirShort(x.az)}</span></button>)}
       </div>
+    </div>
+  )
+}
+
+// ---- satellites ----
+
+/** Satellites moved to a moment: straight-line between now and a minute on (fine for a minute or two). */
+function satsAt(cur: { at: number; list: SatNow[] }, t: number) {
+  const k = Math.max(0, Math.min(2.5, (t - cur.at) / 60000))
+  return cur.list.map(s => {
+    let daz = ((s.az2 - s.az + 540) % 360) - 180
+    if (Math.abs(daz) > 90) daz = 0 // near the zenith: do not swing round
+    return { key: 'sat:' + s.norad, name: s.name === 'ISS (ZARYA)' ? 'ISS' : s.name === 'CSS (TIANHE)' ? 'Tiangong' : s.name, alt: s.alt + (s.alt2 - s.alt) * k, az: (s.az + daz * k + 360) % 360, mag: s.mag, sunlit: s.sunlit,
+      label: s.group === 'station' || s.mag < 1.5 }
+  })
+}
+
+function SatSheet({ s, onClose }: { s: SatNow; onClose: () => void }) {
+  const name = s.name === 'ISS (ZARYA)' ? 'International Space Station' : s.name === 'CSS (TIANHE)' ? 'Tiangong space station' : s.name
+  const dir = ((s.az2 - s.az + 540) % 360) - 180
+  return (
+    <div className="sky-sheet" role="dialog" aria-label={name}>
+      <div className="sky-sheet-head">
+        <div className="grow"><div className="sky-sheet-title">{name}</div><div className="muted small">{s.group === 'station' ? 'Space station' : s.group === 'starlink' ? 'Starlink satellite' : 'Satellite'} · {s.km.toLocaleString()} km away</div></div>
+        <button type="button" className="btn ghost icon-only" onClick={onClose} aria-label="Close"><Icon name="x" size={18} /></button>
+      </div>
+      <div className="sky-sheet-now"><span className="pill ok">{Math.round(s.alt)}° up</span><span>in the {direction(s.az)}, moving {dir >= 0 ? 'clockwise' : 'anticlockwise'} towards the {direction(s.az2 + (s.az2 - s.az) * 3)}</span></div>
+      <p className="small">{s.sunlit ? `Lit by the Sun: magnitude ${s.mag}, ${s.mag < 0 ? 'brighter than almost every star' : s.mag < 2 ? 'easy to see' : 'faint'}. It crosses the sky in a few minutes without blinking (a blinking light is a plane).` : 'In the Earth\'s shadow now, so it cannot be seen.'}</p>
     </div>
   )
 }

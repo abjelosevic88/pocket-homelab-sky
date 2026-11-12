@@ -132,6 +132,8 @@ export interface View {
   guide?: string
   /** the hour labels on a path, at the place's time */
   hourLabel?: (t: number) => string
+  /** satellites above the horizon now (already moved to this moment) */
+  sats?: { key: string; name: string; alt: number; az: number; mag: number; sunlit: boolean; label: boolean }[]
 }
 
 /** The view frame for looking at an altitude and azimuth with no tilt. */
@@ -160,7 +162,7 @@ function clipZ(pts: Vec3[], zmin: number): Vec3[] {
   return out
 }
 
-export interface Hit { key: string; name: string; kind: 'body' | 'star' | 'dso' | 'constellation'; x: number; y: number; d: number }
+export interface Hit { key: string; name: string; kind: 'body' | 'star' | 'dso' | 'constellation' | 'sat'; x: number; y: number; d: number }
 
 export interface Guide { key: string; onScreen: boolean; x: number; y: number; angle: number; off: number; turn: string }
 
@@ -404,6 +406,23 @@ export function draw(ctx: CanvasRenderingContext2D, w: number, h: number, cat: C
       if (key === 'saturn') { ctx.strokeStyle = PLANET_COLOR.saturn; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(x, y, r * 2.1, r * 0.7, -0.35, 0, Math.PI * 2); ctx.stroke() }
       out.push({ key, name: NAMES[key as BodyKey], kind: 'body', x, y, r: r + 6 })
       labels.push({ x, y, text: NAMES[key as BodyKey], font: '600 12px system-ui, sans-serif', color: PLANET_COLOR[key], pri: 50 - b.mag, dx: r + 5, dy: 4 })
+    }
+  }
+
+  // ---- satellites ----
+  if (v.sats) {
+    for (const st of v.sats) {
+      if (st.alt < 0) continue
+      const c = camOf(C, enu(st.alt, st.az))
+      const p = px(c[0], c[1], c[2])
+      if (!onScreen(p, 10)) continue
+      const [x, y] = p!
+      const r = st.sunlit ? Math.max(1.6, Math.min(4.5, 3.2 - st.mag * 0.5)) : 1.4
+      ctx.fillStyle = st.sunlit ? '#f2fbff' : 'rgba(150, 165, 200, 0.45)'
+      if (st.sunlit) { ctx.globalAlpha = 0.25; ctx.beginPath(); ctx.arc(x, y, r * 2.6, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1 }
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
+      out.push({ key: st.key, name: st.name, kind: 'sat', x, y, r: r + 6 })
+      if (st.label && st.sunlit) labels.push({ x, y, text: st.name, font: '600 11px system-ui, sans-serif', color: '#bfe9ff', pri: 60, dx: r + 5, dy: 4 })
     }
   }
 
