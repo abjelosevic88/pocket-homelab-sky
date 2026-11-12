@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abjelosevic88/pocket-homelab-sky/internal/astro"
@@ -150,6 +151,7 @@ func kitFor(mag float64) string {
 // handleMinor is the comets and asteroids worth looking for now, brightest first.
 func (s *Server) handleMinor(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	s.loadMinor(ctx)
 	wh, err := s.whereOf(r, actorID(ctx))
 	if err != nil {
 		s.failWhere(w, err)
@@ -323,4 +325,67 @@ func (s *Server) handleDoubles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"doubles": out, "variables": vars})
+}
+
+// ---- comets and asteroids as objects ----
+//
+// The info card, the log, plans and Pocket AI look objects up by key;
+// comets ("comet:<designation>") and asteroids ("asteroid:<number>") move,
+// so they are kept here with their orbits as they are loaded.
+
+type minorEntry struct {
+	name, kind string
+	at         func(time.Time) astro.Position
+}
+
+var minorReg sync.Map // key → minorEntry
+
+func isMinorKey(key string) bool {
+	return strings.HasPrefix(key, "comet:") || strings.HasPrefix(key, "asteroid:")
+}
+
+// loadMinor makes sure the comets and asteroids are known (from the cache).
+func (s *Server) loadMinor(ctx context.Context) {
+	for _, c := range s.comets(ctx) {
+		c := c
+		minorReg.Store("comet:"+c.Desig, minorEntry{c.Name, "comet", c.At})
+	}
+	for _, m := range s.asteroids(ctx) {
+		m := m
+		if f := strings.Fields(m.Name); len(f) > 0 {
+			minorReg.Store("asteroid:"+f[0], minorEntry{m.Name, "asteroid", m.At})
+		}
+	}
+}
+
+func minorOf(key string) (minorEntry, bool) {
+	v, ok := minorReg.Load(key)
+	if !ok {
+		return minorEntry{}, false
+	}
+	return v.(minorEntry), true
+}
+
+// minorObject is a comet or asteroid as an object, where it is now.
+func minorObject(key string) (catalog.Object, bool) {
+	e, ok := minorOf(key)
+	if !ok {
+		return catalog.Object{}, false
+	}
+	now := time.Now()
+	p := e.at(now)
+	o := catalog.Object{Key: key, Name: e.name, Kind: e.kind, RA: p.RA, Dec: p.Dec, Con: conOf(p.RA, p.Dec, now)}
+	if p.Mag < astro.NoMag {
+		m := round(p.Mag, 1)
+		o.Mag = &m
+	}
+	kit := map[string]string{"eyes": "bright enough to see with the eyes from a dark place", "binoculars": "a faint fuzzy star in binoculars", "telescope": "needs a telescope and a chart"}[kitFor(p.Mag)]
+	if e.kind == "comet" {
+		o.Type = "Comet"
+		o.About = fmt.Sprintf("A comet: a ball of ice and dust on a long orbit, %.2f AU from the Sun and %.2f AU from us now. Right now it is %s; comets often turn out brighter or fainter than predicted.", p.Helio, p.Dist, kit)
+	} else {
+		o.Type = "Asteroid"
+		o.About = fmt.Sprintf("One of the biggest asteroids, a small rocky world between Mars and Jupiter, %.2f AU from us now. It looks like a star and is %s; it moves a little against the stars from night to night.", p.Dist, kit)
+	}
+	return o, true
 }

@@ -897,6 +897,9 @@ func objectFor(key string) (catalog.Object, bool) {
 	if strings.HasPrefix(key, "dbl:") {
 		return doubleObject(key)
 	}
+	if isMinorKey(key) {
+		return minorObject(key)
+	}
 	return catalog.Lookup(key)
 }
 
@@ -926,6 +929,9 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	uid := actorID(ctx)
 	key := chiParam(r, "key")
+	if isMinorKey(key) {
+		s.loadMinor(ctx)
+	}
 	obj, ok := objectFor(key)
 	if !ok {
 		writeErr(w, http.StatusNotFound, "not found")
@@ -959,6 +965,17 @@ func (s *Server) handleObject(w http.ResponseWriter, r *http.Request) {
 		mag := round(p.Mag, 1)
 		d.Mag = &mag
 		f, level = astro.BodyAlt(key, wh.Obs), astro.HorizonOf(key)
+	} else if e, ok := minorOf(key); ok {
+		p := e.at(t)
+		d.RADate, d.DecDate = round(p.RA, 3), round(p.Dec, 3)
+		alt, az := astro.Horizontal(p.RA, p.Dec, wh.Obs, t)
+		d.Alt, d.Az = round(alt, 2), round(az, 2)
+		d.Con = conOf(p.RA, p.Dec, t)
+		if p.Mag < astro.NoMag {
+			mag := round(p.Mag, 1)
+			d.Mag = &mag
+		}
+		f, level = func(t time.Time) float64 { q := e.at(t); a, _ := astro.Horizontal(q.RA, q.Dec, wh.Obs, t); return a }, astro.HorizonPoint
 	} else {
 		ra, dec := astro.OfDate(obj.RA, obj.Dec, t)
 		d.RADate, d.DecDate = round(ra, 3), round(dec, 3)
@@ -1010,6 +1027,10 @@ func objAltAz(key string, obj catalog.Object, o astro.Observer, t time.Time) (fl
 	if _, ok := astro.Names[key]; ok {
 		p := astro.At(key, o, t)
 		return p.Alt, p.Az
+	}
+	if e, ok := minorOf(key); ok {
+		p := e.at(t)
+		return astro.Horizontal(p.RA, p.Dec, o, t)
 	}
 	ra, dec := astro.OfDate(obj.RA, obj.Dec, t)
 	return astro.Horizontal(ra, dec, o, t)

@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -376,4 +377,30 @@ func TestKitPlansPhotos(t *testing.T) {
 	a.expect(404, a.bob, "GET", "/api/v1/photos/"+id(ph)+"/file", nil)
 	a.expect(404, a.bob, "DELETE", "/api/v1/photos/"+id(ph), nil)
 	a.expect(204, a.alice, "DELETE", "/api/v1/photos/"+id(ph), nil)
+}
+
+// Comets and asteroids open like any object: the info card, the log, plans.
+func TestMinorObjects(t *testing.T) {
+	a := newApp(t, nil)
+	home := addPlace(a, a.alice, "Home", 43.8563, 18.4131)
+	o := a.ok(a.alice, "GET", "/api/v1/objects/asteroid:4", nil)
+	if o["name"] != "4 Vesta" || o["type"] != "Asteroid" || o["mag"] == nil || o["dir"] == "" {
+		t.Fatalf("asteroid card: %v", o)
+	}
+	c := a.ok(a.alice, "GET", "/api/v1/objects/"+url.PathEscape("comet:C/2026 D1"), nil)
+	if c["type"] != "Comet" || c["about"] == "" {
+		t.Fatalf("comet card: %v", c)
+	}
+	a.expect(404, a.alice, "GET", "/api/v1/objects/asteroid:99999", nil)
+	obs := a.ok(a.alice, "POST", "/api/v1/observations", map[string]any{"night": "2026-11-12", "location_id": home["id"],
+		"objects": []map[string]any{{"key": "asteroid:4"}}})
+	if objs := obs["objects"].([]any); len(objs) != 1 || objs[0].(map[string]any)["name"] != "4 Vesta" {
+		t.Fatalf("logged asteroid: %v", obs["objects"])
+	}
+	p := a.ok(a.alice, "POST", "/api/v1/plans", map[string]any{"name": "Vesta", "night": "2026-11-12", "location_id": home["id"],
+		"items": []map[string]any{{"key": "asteroid:4"}}})
+	pv := a.ok(a.alice, "GET", "/api/v1/plans/"+id(p), nil)
+	if it := pv["items"].([]any)[0].(map[string]any); it["type"] != "Asteroid" || it["best_at"] == nil {
+		t.Fatalf("plan item: %v", it)
+	}
 }

@@ -70,6 +70,8 @@ func cleanObjects(in []objectIn) ([]store.ObsObject, string) {
 			}
 		} else if o, ok := objectFor(k); ok {
 			name = o.Name
+		} else if isMinorKey(k) && name != "" {
+			// a comet or asteroid not loaded yet: keep the name it came with
 		} else {
 			return nil, "unknown object " + k
 		}

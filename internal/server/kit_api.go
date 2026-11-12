@@ -110,6 +110,12 @@ type planView struct {
 // timeItems works out when each item is best on the plan's night.
 func (s *Server) timeItems(ctx context.Context, uid int64, p *store.Plan) planView {
 	v := planView{Plan: p, Items: []planItemView{}}
+	for _, it := range p.Items {
+		if isMinorKey(it.Key) {
+			s.loadMinor(ctx)
+			break
+		}
+	}
 	var wh *where
 	if p.LocationID != nil {
 		if l, err := s.store.GetLocation(ctx, uid, *p.LocationID); err == nil {
@@ -143,6 +149,8 @@ func (s *Server) timeItems(ctx context.Context, uid int64, p *store.Plan) planVi
 			var f astro.AltFunc
 			if _, body := astro.Names[it.Key]; body {
 				f = astro.BodyAlt(it.Key, wh.Obs)
+			} else if e, moving := minorOf(it.Key); moving {
+				f = func(t time.Time) float64 { q := e.at(t); a, _ := astro.Horizontal(q.RA, q.Dec, wh.Obs, t); return a }
 			} else {
 				ra, dec := astro.OfDate(obj.RA, obj.Dec, from)
 				f = astro.FixedAlt(ra, dec, wh.Obs)
@@ -323,6 +331,7 @@ func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 // Stellarium's observing list (.json) or a spreadsheet (.csv).
 func (s *Server) handleExportPlan(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	s.loadMinor(ctx)
 	uid := actorID(ctx)
 	p, err := s.store.GetPlan(ctx, uid, idParam(r, "id"))
 	if err != nil {

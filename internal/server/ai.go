@@ -201,6 +201,7 @@ Plan their night in 4 to 6 short sentences: whether it is worth going out and wh
 // handleAIAsk answers a question about the sky tonight at a place.
 func (s *Server) handleAIAsk(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	s.loadMinor(ctx)
 	uid := actorID(ctx)
 	var in struct {
 		Question string `json:"question"`
@@ -276,6 +277,7 @@ func (s *Server) objectFacts(o catalog.Object, wh where) string {
 // handleAIExplain tells about one object in a few friendly sentences (cached a month).
 func (s *Server) handleAIExplain(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	s.loadMinor(ctx)
 	uid := actorID(ctx)
 	var in struct {
 		Key  string `json:"key"`
