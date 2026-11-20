@@ -203,6 +203,7 @@ func (s *Server) manifest() core.Manifest {
 		URL: s.cfg.CoreAppURL, PublicURL: s.cfg.BaseURL, HealthPath: "/healthz", EnvPrefix: "SKY",
 		Publishes: eventTopics,
 		Offers:    linkOffers,
+		Portable:  portable,
 		Uses:      append(linkUses(), core.InferenceUse()),
 	}
 	if s.cfg.BaseURL != "" {

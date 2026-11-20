@@ -40,3 +40,5 @@ Places are given as `?location=ID` (one of yours; home when left out) or `?lat=&
 ## Everything else
 
 `/auth/*`, `/settings`, `/tokens`, `/users`, `/ai/status|models|plan|ask|explain`, `/notify/test|check`, `/export.json`, `/export.csv`, `/import`, `/backup` (admins), `/healthz`, `/metrics` (when `METRICS_ENABLED`).
+
+Pocket Move can copy your places, observing log and want-to-see list out and bring them in: `GET /pocket/portable` describes them for `move:export` / `move:import` links (`/export.json`, `/export.csv` out; `/import` in, adding only what is not here yet).
