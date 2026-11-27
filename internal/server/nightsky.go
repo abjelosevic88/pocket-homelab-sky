@@ -101,7 +101,11 @@ func (s *Server) auroraNow(ctx context.Context) *space.Aurora {
 }
 
 func (s *Server) auroraTonight(ctx context.Context, w where, n astro.Night) *auroraView {
-	a := s.auroraNow(ctx)
+	return auroraOf(s.auroraNow(ctx), w, n)
+}
+
+// auroraOf reads a forecast for one night at a place.
+func auroraOf(a *space.Aurora, w where, n astro.Night) *auroraView {
 	if a == nil || n.DarkKind == "none" {
 		return nil
 	}

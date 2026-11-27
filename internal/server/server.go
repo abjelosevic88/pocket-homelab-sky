@@ -197,14 +197,15 @@ var eventTopics = []string{"sky.observation.logged", "sky.clear_night", "sky.eve
 // manifest is what Sky tells Core about itself.
 func (s *Server) manifest() core.Manifest {
 	m := core.Manifest{
-		Slug: "sky", Name: "Pocket Sky",
+		Slug: "sky", Name: "Pocket Sky", Category: "Places",
 		Description: "Your night sky: whether tonight will be clear and dark where you are, the Moon, which planets are up and when, and the best sights for binoculars or a telescope. A star map you drag around, or hold your phone up to the sky and see what you are looking at, over the camera. Eclipses, meteor showers and planets meeting, worked out for your place, an observing log and the Messier list to tick off, with Pocket AI to plan the night.",
 		Icon:        "/favicon.svg", Version: Version,
 		URL: s.cfg.CoreAppURL, PublicURL: s.cfg.BaseURL, HealthPath: "/healthz", EnvPrefix: "SKY",
-		Publishes: eventTopics,
-		Offers:    linkOffers,
-		Portable:  portable,
-		Uses:      append(linkUses(), core.InferenceUse()),
+		Publishes:    eventTopics,
+		Offers:       linkOffers,
+		Portable:     portable,
+		Capabilities: capabilities,
+		Uses:         append(linkUses(), core.InferenceUse()),
 	}
 	if s.cfg.BaseURL != "" {
 		m.OIDC = &core.OIDCRequest{RedirectURIs: []string{s.oidcCallbackURL()}}

@@ -138,7 +138,46 @@ func scanPlan(sc interface{ Scan(...any) error }) (*Plan, error) {
 
 // ListPlans is the person's plans, newest night first (without items).
 func (s *Store) ListPlans(ctx context.Context, uid int64) ([]Plan, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT `+planCols+`, (SELECT COUNT(1) FROM plan_items i WHERE i.plan_id = plans.id) FROM plans WHERE user_id = ? ORDER BY night DESC, id DESC`, uid)
+	return s.FindPlans(ctx, uid, PlanFilter{})
+}
+
+// PlanFilter narrows the plans.
+type PlanFilter struct {
+	From, To string // nights, inclusive
+	Q        string // words in the name, notes, equipment or the things to see
+	Soonest  bool   // the earliest night first
+	Limit    int
+}
+
+// FindPlans is the person's plans a filter leaves, newest night first
+// (without items, like ListPlans).
+func (s *Store) FindPlans(ctx context.Context, uid int64, f PlanFilter) ([]Plan, error) {
+	q := `SELECT ` + planCols + `, (SELECT COUNT(1) FROM plan_items i WHERE i.plan_id = plans.id) FROM plans WHERE user_id = ?`
+	args := []any{uid}
+	if f.From != "" {
+		q += ` AND night >= ?`
+		args = append(args, f.From)
+	}
+	if f.To != "" {
+		q += ` AND night <= ?`
+		args = append(args, f.To)
+	}
+	if w := strings.TrimSpace(f.Q); w != "" {
+		like := "%" + strings.ToLower(w) + "%"
+		q += ` AND (lower(name) LIKE ? OR lower(notes) LIKE ? OR lower(setup) LIKE ?
+			OR id IN (SELECT plan_id FROM plan_items WHERE user_id = ? AND (lower(name) LIKE ? OR lower(note) LIKE ?)))`
+		args = append(args, like, like, like, uid, like, like)
+	}
+	if f.Soonest {
+		q += ` ORDER BY night, id`
+	} else {
+		q += ` ORDER BY night DESC, id DESC`
+	}
+	if f.Limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, f.Limit)
+	}
+	rows, err := s.DB.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

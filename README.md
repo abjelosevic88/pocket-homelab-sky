@@ -75,6 +75,17 @@ Set `CORE_URL` and `CORE_REGISTRATION_KEY` and Sky joins the box: people sign in
 
 Other apps can read your sky (`sky:read`: tonight, the coming nights, events, positions, your log and lists — for Pocket Day, Pocket AI and dashboards) or log a night (`sky:write`). Events on the bus: `sky.clear_night`, `sky.event`, `sky.observation.logged`. Without Core every connection can be made directly with a URL and a token; the Core-only choices stay visible, greyed out.
 
+Sky also tells Core what it can do for the apps that bring everything together, so they find it on their own (it sits under Places):
+
+| Asked by | What they get | Scope |
+|---|---|---|
+| Pocket Search (`!sky`, `!stars`, `!astro`) | your log entries, plans, want-to-see list and equipment, and anything in the sky by name | `pocket:search` |
+| Pocket Day | the nights you logged and what you saw, the plans for that night and the sky events of the day | `pocket:day` |
+| Pocket Hub, a widget | Tonight's sky: when it gets dark, the Moon, the best things to look at and your next plan | `pocket:widget` |
+| Pocket Hub, a quick line | "Saw Jupiter's moons, clear sky" becomes an entry in your observing log | `pocket:capture` |
+
+Each scope opens one route ([docs/api.md](docs/api.md)) and nothing else, and only your own things come back. The widget and the day never wait for a forecast: they show the cloud only when Sky already has a recent one.
+
 ## Develop
 
 ```sh

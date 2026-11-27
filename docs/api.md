@@ -1,6 +1,6 @@
 # API
 
-Everything is under `/api/v1`, JSON in and out. Authenticate with the session cookie, or a personal token (Settings → API & shortcuts) as `Authorization: Bearer psky_…`. A Pocket Core app link (`pcx_…`) reaches only the routes of its scopes (`sky:read`, `sky:write`).
+Everything is under `/api/v1`, JSON in and out. Authenticate with the session cookie, or a personal token (Settings → API & shortcuts) as `Authorization: Bearer psky_…`. A Pocket Core app link (`pcx_…`) reaches only the routes of its scopes (`sky:read`, `sky:write`, and one route each for `pocket:search`, `pocket:day`, `pocket:widget` and `pocket:capture`).
 
 Places are given as `?location=ID` (one of yours; home when left out) or `?lat=&lon=` (any spot, with `&tz=Europe/Sarajevo` for its time zone). Times are RFC 3339; positions are degrees.
 
@@ -40,5 +40,16 @@ Places are given as `?location=ID` (one of yours; home when left out) or `?lat=&
 ## Everything else
 
 `/auth/*`, `/settings`, `/tokens`, `/users`, `/ai/status|models|plan|ask|explain`, `/notify/test|check`, `/export.json`, `/export.csv`, `/import`, `/backup` (admins), `/healthz`, `/metrics` (when `METRICS_ENABLED`).
+
+## For Pocket Search, Pocket Day and Pocket Hub
+
+Four routes in the shape every Pocket app answers in (Pocket Core's capabilities). Each has its own link scope, which opens that one route and nothing else; you can call them with your own session or token too. They never ask an outside service: the sky is worked out on the box, and the cloud and northern-lights forecasts are used only when the app already keeps a recent copy.
+
+| | | |
+|---|---|---|
+| `GET /pocket/search?q=&limit=` | `pocket:search` | Your log entries, plans, want-to-see list and equipment, and the planets, stars, constellations and deep-sky objects by name: `{"items":[{"id":"observation:12","title","snippet","kind","date","url"}]}`. The object the words name comes first, then your own things |
+| `GET /pocket/day/YYYY-MM-DD[?tz=]` | `pocket:day` | The nights you logged for that date and what you saw (`observed`), the plans for that night (`planned`) and up to three sky events of the day at your home place (`event`), with a line like "Observed Jupiter and M42 Orion Nebula" |
+| `GET /pocket/widget` | `pocket:widget` | Tonight at your home place: a line like "Dark from 18:40, Moon 12%", then a sky event, the planets that are up, the best sights and your next plan (at most eight rows). Empty until you add a place |
+| `POST /pocket/capture` | `pocket:capture` | `{"request_id":"…","kind":"observation","text":"Saw Jupiter's moons, clear sky","date":"2026-11-12"}` adds an entry to the observing log: the first line is its title, the rest the notes, the night is `date` or tonight, the place your home place. The same `request_id` again answers the same entry and adds nothing |
 
 Pocket Move can copy your places, observing log and want-to-see list out and bring them in: `GET /pocket/portable` describes them for `move:export` / `move:import` links (`/export.json`, `/export.csv` out; `/import` in, adding only what is not here yet).

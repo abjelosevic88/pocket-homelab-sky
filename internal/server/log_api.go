@@ -239,12 +239,17 @@ func (s *Server) handleCreateObservation(w http.ResponseWriter, r *http.Request)
 		s.fail(w, err, "log entry")
 		return
 	}
+	s.observationLogged(ctx, uid, o)
+	writeJSON(w, http.StatusCreated, o)
+}
+
+// observationLogged tells the Core bus about a new log entry.
+func (s *Server) observationLogged(ctx context.Context, uid int64, o *store.Observation) {
 	names := make([]string, 0, len(o.Objects))
 	for _, x := range o.Objects {
 		names = append(names, x.Name)
 	}
 	s.publish(ctx, uid, "sky.observation.logged", strconv.FormatInt(o.ID, 10), map[string]any{"id": o.ID, "night": o.Night, "title": o.Title, "place": o.Place, "objects": names, "source": o.Source})
-	writeJSON(w, http.StatusCreated, o)
 }
 
 func (s *Server) handleUpdateObservation(w http.ResponseWriter, r *http.Request) {

@@ -157,6 +157,12 @@ func nullInt(p *int) any {
 
 // CreateObservation adds a log entry with its objects.
 func (s *Store) CreateObservation(ctx context.Context, o *Observation) error {
+	return s.CreateObservationWith(ctx, o, nil)
+}
+
+// CreateObservationWith adds a log entry and runs more in the same
+// transaction (o has its ID by then): if that fails, nothing is added.
+func (s *Store) CreateObservationWith(ctx context.Context, o *Observation, more func(tx *sql.Tx) error) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -172,6 +178,11 @@ func (s *Store) CreateObservation(ctx context.Context, o *Observation) error {
 	o.ID, _ = res.LastInsertId()
 	if err := writeObjects(ctx, tx, o.UserID, o.ID, o.Objects); err != nil {
 		return err
+	}
+	if more != nil {
+		if err := more(tx); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return err

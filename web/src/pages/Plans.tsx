@@ -1,7 +1,7 @@
 // Observing plans (what to look at on a night, in the best order, to print
 // or take into SkySafari or Stellarium) and your equipment.
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, V1 } from '../lib/api'
 import { useData } from '../lib/data'
 import { fmtAt, fmtDate, nightOf } from '../lib/format'
@@ -19,7 +19,9 @@ interface Plan { id: number; name: string; night: string; location_id: number | 
 
 export default function PlansPage() {
   const { id } = useParams()
-  const [tab, setTab] = useState<'plans' | 'kit'>(() => (localStorage.getItem('psky-plans-tab') as 'plans' | 'kit') || 'plans')
+  // /plans?tab=kit opens on the equipment (what a search result links to)
+  const [sp] = useSearchParams()
+  const [tab, setTab] = useState<'plans' | 'kit'>(() => sp.get('tab') === 'kit' ? 'kit' : (localStorage.getItem('psky-plans-tab') as 'plans' | 'kit') || 'plans')
   useCrumb(id ? 'Plan' : undefined)
   if (id) return <PlanEditor id={Number(id)} />
   return (
